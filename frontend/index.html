@@ -1,0 +1,2307 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>賽程管理器</title>
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --panel-bg: #111827;
+            --match-bg: #1f2937;
+            --primary: #3b82f6;
+            --success: #10b981;
+            --danger: #ef4444;
+            --gold: #f59e0b;
+            --text: #f3f4f6;
+            --text-muted: #9ca3af;
+            --border: #374151;
+            --soft-border: rgba(255,255,255,0.08);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: radial-gradient(circle at top, #111827 0%, var(--bg-color) 55%);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+        }
+
+        header, .leaderboard-section, .arena-wrapper {
+            background-color: rgba(17, 24, 39, 0.95);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+        }
+
+        header {
+            padding: 15px 20px;
+            margin-bottom: 20px;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        select, button {
+            background-color: var(--bg-color);
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 7px 12px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        button:hover, select:hover { border-color: var(--primary); }
+        button:disabled, select option:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        button.btn-generate {
+            background: var(--primary);
+            border: none;
+            font-weight: 700;
+        }
+
+        button.btn-secondary {
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-muted);
+        }
+
+        button.btn-secondary:hover {
+            color: var(--text);
+            border-color: var(--gold);
+        }
+
+        .result-actions {
+            margin-top: 12px;
+            display: flex;
+            justify-content: center;
+        }
+
+        button.btn-download-result {
+            background: var(--gold);
+            color: #111827;
+            border: none;
+            font-weight: 900;
+        }
+
+        button.btn-download-result:hover {
+            filter: brightness(1.08);
+            border: none;
+        }
+
+        .pending-settings-badge {
+            color: var(--gold);
+            background: rgba(245, 158, 11, 0.12);
+            border: 1px solid rgba(245, 158, 11, 0.45);
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            font-weight: 800;
+        }
+
+        .hidden { display: none !important; }
+
+        .control-group.pending select {
+            border-color: var(--gold);
+            box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.12);
+        }
+
+        .format-note {
+            margin-top: 8px;
+            text-align: center;
+            color: var(--gold);
+            font-size: 0.8rem;
+            font-weight: 800;
+        }
+
+        .hint {
+            margin-top: 10px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+        }
+
+        .leaderboard-section {
+            padding: 15px;
+            margin-bottom: 20px;
+            max-height: 245px;
+            overflow-y: auto;
+        }
+
+        .leaderboard-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .leaderboard-table th, .leaderboard-table td {
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--soft-border);
+        }
+
+        .leaderboard-table th {
+            background-color: rgba(255, 255, 255, 0.03);
+            color: var(--text-muted);
+            font-weight: 700;
+            position: sticky;
+            top: 0;
+        }
+
+        .arena-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 22px;
+            padding: 22px;
+            overflow-x: auto;
+            overflow-anchor: none;
+            scroll-behavior: auto;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 22px 60px rgba(0,0,0,0.22);
+        }
+
+        .arena-wrapper.preserve-scroll-lock {
+            scroll-behavior: auto !important;
+            overflow-anchor: none;
+        }
+
+        .arena-title {
+            text-align: center;
+            font-size: 1.25rem;
+            font-weight: 900;
+            color: #fff;
+            border-bottom: 1px solid var(--soft-border);
+            padding-bottom: 12px;
+            letter-spacing: 0.04em;
+        }
+
+        .pyramid-container {
+            position: relative;
+            display: grid;
+            grid-template-columns: minmax(max-content, 1fr) 260px minmax(max-content, 1fr);
+            gap: 58px;
+            align-items: stretch;
+            min-width: 1180px;
+            padding: 12px 4px 18px;
+        }
+
+        .pyramid-container::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 260px;
+            height: 260px;
+            transform: translate(-50%, -50%);
+            background: radial-gradient(circle, rgba(245, 158, 11, 0.10), transparent 68%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .bracket-lines {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            overflow: visible;
+            z-index: 0;
+        }
+
+        .bracket-lines path {
+            fill: none;
+            stroke: rgba(148, 163, 184, 0.48);
+            stroke-width: 2.25;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            filter: drop-shadow(0 2px 2px rgba(0,0,0,0.28));
+        }
+
+        .bracket-lines path.route-winner.active { stroke: rgba(16, 185, 129, 0.98); stroke-width: 3.25; }
+        .bracket-lines path.route-loser.active { stroke: rgba(239, 68, 68, 0.92); stroke-width: 3.25; }
+
+        .pyramid-container.single-wing {
+            grid-template-columns: minmax(max-content, 1fr) 260px;
+            min-width: 820px;
+        }
+
+        .wing, .center-arena {
+            position: relative;
+            z-index: 1;
+        }
+
+        .wing {
+            display: flex;
+            gap: 30px;
+            align-items: flex-start;
+            padding: 14px;
+            border-radius: 16px;
+            border: 1px solid rgba(148, 163, 184, 0.14);
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012)),
+                radial-gradient(circle at top, rgba(59,130,246,0.07), transparent 58%);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+        }
+
+        #left-wing {
+            border-top: 3px solid rgba(16, 185, 129, 0.58);
+        }
+
+        #right-wing {
+            flex-direction: row-reverse;
+            border-top: 3px solid rgba(239, 68, 68, 0.58);
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012)),
+                radial-gradient(circle at top, rgba(239,68,68,0.065), transparent 58%);
+        }
+
+        .column {
+            position: relative;
+            min-width: 230px;
+            flex: 0 0 230px;
+        }
+
+        .column .match-box {
+            position: absolute;
+            left: 0;
+            right: 0;
+            width: 100%;
+            margin-bottom: 0;
+        }
+
+        .column-title {
+            text-align: center;
+            font-size: 0.76rem;
+            color: var(--text-muted);
+            background: rgba(255,255,255,0.055);
+            border: 1px solid rgba(255,255,255,0.07);
+            padding: 7px 8px;
+            border-radius: 999px;
+            margin-bottom: 10px;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .match-box {
+            display: flex;
+            flex-direction: column;
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.015)),
+                var(--match-bg);
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 5px;
+            box-shadow: 0 14px 28px rgba(0,0,0,0.23), inset 0 1px 0 rgba(255,255,255,0.04);
+            transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+        }
+
+        .match-box:hover {
+            transform: translateY(-1px);
+            border-color: rgba(96, 165, 250, 0.62);
+            box-shadow: 0 18px 34px rgba(0,0,0,0.28), 0 0 0 1px rgba(96, 165, 250, 0.08) inset;
+        }
+
+        .match-box[data-match-id^="W_"] { border-left: 4px solid rgba(16, 185, 129, 0.75); }
+        .match-box[data-match-id^="L_"] { border-left: 4px solid rgba(239, 68, 68, 0.72); }
+        .match-box[data-match-id="GF_MATCH"],
+        .match-box[data-match-id="GF_RESET_MATCH"] {
+            border: 1px solid rgba(245, 158, 11, 0.68);
+            border-left: 4px solid var(--gold);
+            background:
+                linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(59, 130, 246, 0.08)),
+                var(--match-bg);
+        }
+
+        .match-box.locked { opacity: 0.72; }
+
+        .match-tag {
+            font-size: 0.68rem;
+            text-align: center;
+            background: rgba(0,0,0,0.28);
+            color: var(--text-muted);
+            padding: 5px 0;
+            border-bottom: 1px solid var(--soft-border);
+            letter-spacing: 0.05em;
+            font-weight: 800;
+        }
+
+        .slot {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 11px;
+            min-height: 38px;
+            gap: 8px;
+        }
+
+        .slot + .slot { border-top: 1px solid var(--soft-border); }
+
+        .slot span, .slot input {
+            font-size: 0.82rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .slot span { color: var(--text-muted); }
+
+        .slot input {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid transparent;
+            color: #fff;
+            width: 100%;
+            outline: none;
+            padding: 4px 6px;
+            border-radius: 4px;
+        }
+
+        .slot input:focus { border-color: var(--primary); }
+
+        .win-btn {
+            background: #374151;
+            color: #fff;
+            border: none;
+            padding: 3px 7px;
+            border-radius: 4px;
+            font-size: 0.66rem;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .win-btn:hover { background: var(--primary); }
+        .slot.winner span, .slot.winner input { color: var(--success); font-weight: 800; }
+        .slot.winner { background-color: rgba(16, 185, 129, 0.09); }
+        .slot.loser span, .slot.loser input { text-decoration: line-through; opacity: 0.55; }
+
+        .slot.bye span { color: var(--gold); font-weight: 800; }
+        .slot.bye { background-color: rgba(245, 158, 11, 0.06); }
+
+        .center-arena {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            justify-content: center;
+            gap: 18px;
+            min-width: 250px;
+            padding: 14px 4px;
+        }
+
+        .center-arena .match-box {
+            width: 100%;
+        }
+
+        .podium {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(17, 24, 39, 0.88) 100%);
+            border: 1px solid rgba(245, 158, 11, 0.55);
+            border-radius: 14px;
+            padding: 15px;
+            text-align: center;
+            width: 100%;
+            box-shadow: 0 16px 34px rgba(0,0,0,0.23), inset 0 1px 0 rgba(255,255,255,0.05);
+        }
+
+        .podium-title { font-size: 0.75rem; color: var(--gold); font-weight: 800; }
+        .podium-name { font-size: 1.1rem; font-weight: 900; color: #fff; margin-top: 6px; }
+        .status-out { color: var(--danger); }
+        .status-alive { color: var(--success); }
+        .status-champion { color: var(--gold); font-weight: 800; }
+
+
+        .auth-page, .dashboard-page {
+            max-width: 1120px;
+            margin: 0 auto;
+        }
+
+        .auth-card, .dashboard-card, .profile-card {
+            background-color: rgba(17, 24, 39, 0.95);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 22px;
+            margin-bottom: 20px;
+            box-shadow: 0 22px 60px rgba(0,0,0,0.18);
+        }
+
+        .auth-card { max-width: 460px; margin: 40px auto; }
+        .auth-title, .dashboard-title { margin: 0 0 8px; font-size: 1.5rem; font-weight: 900; }
+        .auth-subtitle, .dashboard-subtitle { color: var(--text-muted); margin-bottom: 18px; line-height: 1.5; }
+
+        .auth-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+        .auth-tabs button.active { background: var(--primary); border-color: var(--primary); color: white; font-weight: 800; }
+        .auth-form { display: flex; flex-direction: column; gap: 10px; }
+        .auth-form input, .auth-form textarea, .dashboard-card input, .profile-card input {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 10px 11px;
+            border-radius: 8px;
+            outline: none;
+        }
+        .auth-form input:focus, .dashboard-card input:focus, .profile-card input:focus { border-color: var(--primary); }
+        .auth-actions, .dashboard-actions, .profile-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+        .message { margin-top: 12px; color: var(--text-muted); font-size: 0.9rem; line-height: 1.45; white-space: pre-wrap; }
+        .message.error { color: #fca5a5; }
+        .message.success { color: #86efac; }
+
+        .top-user-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1120px;
+            margin: 0 auto 18px;
+            padding: 14px 18px;
+            background: rgba(17, 24, 39, 0.95);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+        }
+        .user-pill { color: var(--text-muted); font-weight: 700; }
+        .grid-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+        @media (max-width: 850px) { .grid-two { grid-template-columns: 1fr; } }
+
+        .saved-list { display: flex; flex-direction: column; gap: 10px; }
+        .saved-item {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 12px;
+            align-items: center;
+            background: rgba(255,255,255,0.035);
+            border: 1px solid var(--soft-border);
+            border-radius: 10px;
+            padding: 12px;
+        }
+        .saved-title { font-weight: 900; color: #fff; }
+        .saved-meta { color: var(--text-muted); font-size: 0.82rem; margin-top: 4px; }
+        .saved-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+        .btn-danger { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.55); color: #fecaca; }
+        .btn-success { background: rgba(16, 185, 129, 0.16); border-color: rgba(16, 185, 129, 0.45); color: #bbf7d0; }
+        .save-status { color: var(--text-muted); background: rgba(255,255,255,0.04); border: 1px solid var(--soft-border); padding: 6px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 800; }
+        .save-status.saved { color: #86efac; border-color: rgba(16,185,129,0.45); }
+        .save-status.error { color: #fca5a5; border-color: rgba(239,68,68,0.45); }
+        .save-status.saving { color: var(--gold); border-color: rgba(245,158,11,0.45); }
+        .tournament-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+        .tournament-title-input { min-width: 240px; flex: 1; max-width: 520px; }
+        .small-note { color: var(--text-muted); font-size: 0.82rem; line-height: 1.45; }
+
+        .toast-container {
+            position: fixed;
+            top: 18px;
+            right: 18px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: min(360px, calc(100vw - 36px));
+        }
+        .toast {
+            background: rgba(17, 24, 39, 0.97);
+            border: 1px solid var(--soft-border);
+            color: var(--text);
+            border-radius: 12px;
+            padding: 12px 14px;
+            box-shadow: 0 16px 38px rgba(0,0,0,0.28);
+            font-size: 0.9rem;
+            font-weight: 800;
+            line-height: 1.4;
+            animation: toastIn 0.16s ease-out;
+        }
+        .toast.success { border-color: rgba(16,185,129,0.55); color: #bbf7d0; }
+        .toast.error { border-color: rgba(239,68,68,0.55); color: #fecaca; }
+        .toast.info { border-color: rgba(59,130,246,0.55); color: #bfdbfe; }
+        @keyframes toastIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+
+    </style>
+</head>
+<body>
+
+<div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+<div id="auth-app" class="auth-page hidden">
+    <div class="auth-card">
+        <h1 class="auth-title">Tournament Manager</h1>
+        <div class="auth-subtitle">登入後可以建立賽程，並把進行中或已完成的賽程儲存在自己的帳號底下。</div>
+        <div class="auth-tabs">
+            <button id="login-tab" type="button" class="active" onclick="setAuthMode('login')">登入</button>
+            <button id="register-tab" type="button" onclick="setAuthMode('register')">建立帳號</button>
+            <button id="forgot-tab" type="button" onclick="setAuthMode('forgot')">忘記密碼</button>
+        </div>
+
+        <form id="login-form" class="auth-form" autocomplete="off" onsubmit="loginUser(event)">
+            <input id="login-email" type="email" placeholder="Email" autocomplete="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true" required>
+            <input id="login-password" type="password" placeholder="Password" autocomplete="off" data-lpignore="true" data-1p-ignore="true" required>
+            <button class="btn-generate" type="submit">登入</button>
+        </form>
+
+        <form id="register-form" class="auth-form hidden" autocomplete="off" onsubmit="registerUser(event)">
+            <input id="register-username" type="text" placeholder="Username" autocomplete="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true" required>
+            <input id="register-email" type="email" placeholder="Email" autocomplete="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true" required>
+            <input id="register-password" type="password" placeholder="Password，至少 8 碼" autocomplete="off" data-lpignore="true" data-1p-ignore="true" minlength="8" required>
+            <button class="btn-generate" type="submit">建立帳號並登入</button>
+        </form>
+
+        <div id="forgot-form" class="auth-form hidden">
+            <input id="forgot-email" type="email" placeholder="輸入註冊 Email" autocomplete="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true">
+            <button class="btn-secondary" type="button" onclick="requestPasswordReset()">產生重設密碼 token</button>
+            <input id="reset-token" type="text" placeholder="Reset token" autocomplete="off" data-lpignore="true" data-1p-ignore="true">
+            <input id="reset-new-password" type="password" placeholder="New password，至少 8 碼" autocomplete="off" data-lpignore="true" data-1p-ignore="true" minlength="8">
+            <button class="btn-generate" type="button" onclick="resetPasswordWithToken()">使用 token 重設密碼</button>
+            <div class="small-note">入門版不串接 Email；開發模式會直接把 reset token 顯示在畫面上。</div>
+        </div>
+        <div id="auth-message" class="message"></div>
+    </div>
+</div>
+
+<div id="dashboard-app" class="dashboard-page hidden">
+    <div class="top-user-bar">
+        <div>
+            <div class="user-pill" id="dashboard-user-pill">尚未登入</div>
+            <div class="small-note">Profile / 帳號管理 / 已儲存賽程</div>
+        </div>
+        <div class="dashboard-actions">
+            <button class="btn-generate" type="button" onclick="startNewTournament()">建立新賽程</button>
+            <button class="btn-secondary" type="button" onclick="refreshDashboard()">重新整理</button>
+            <button class="btn-secondary" type="button" onclick="logoutUser()">登出</button>
+        </div>
+    </div>
+
+    <div class="grid-two">
+        <section class="profile-card">
+            <h2 class="dashboard-title">我的帳號</h2>
+            <div id="profile-summary" class="auth-subtitle"></div>
+            <h3>更換密碼</h3>
+            <div class="auth-form">
+                <input id="current-password" type="password" placeholder="目前密碼" autocomplete="off" data-lpignore="true" data-1p-ignore="true">
+                <input id="new-password" type="password" placeholder="新密碼，至少 8 碼" autocomplete="off" data-lpignore="true" data-1p-ignore="true" minlength="8">
+                <button class="btn-secondary" type="button" onclick="changePassword()">更換密碼</button>
+            </div>
+            <h3>刪除帳號</h3>
+            <div class="auth-form">
+                <input id="delete-password" type="password" placeholder="輸入密碼確認刪除帳號" autocomplete="off" data-lpignore="true" data-1p-ignore="true">
+                <button class="btn-danger" type="button" onclick="deleteAccount()">刪除帳號與所有賽程</button>
+            </div>
+            <div id="profile-message" class="message"></div>
+        </section>
+
+        <section class="dashboard-card">
+            <h2 class="dashboard-title">我的賽程</h2>
+            <div class="auth-subtitle">進行中或已完成的賽程都可以儲存在這裡。</div>
+            <div id="saved-tournaments-list" class="saved-list"></div>
+            <div id="dashboard-message" class="message"></div>
+        </section>
+    </div>
+</div>
+
+<div id="tournament-app" class="hidden">
+    <div class="top-user-bar">
+        <div>
+            <div class="user-pill" id="editor-user-pill">賽程編輯器</div>
+            <input id="tournament-title-input" class="tournament-title-input" type="text" placeholder="賽程名稱，例如：2026 Summer Cup">
+        </div>
+        <div class="dashboard-actions">
+            <button class="btn-secondary" type="button" onclick="showDashboardView()">回 Profile</button>
+            <button class="btn-success" type="button" onclick="saveCurrentTournament()">儲存目前賽程</button>
+            <button class="btn-secondary" type="button" onclick="logoutUser()">登出</button>
+            <span id="save-status" class="save-status">尚未儲存</span>
+        </div>
+    </div>
+
+    <header>
+        <div class="controls">
+            <div id="teams-control" class="control-group">
+                <label for="teams-select">隊伍數：</label>
+                <select id="teams-select">
+                    <option value="4" selected>4 隊</option>
+                </select>
+            </div>
+            <div id="loss-control" class="control-group">
+                <label for="loss-select">淘汰機制：</label>
+                <select id="loss-select">
+                    <option value="1" selected>1 敗淘汰（單敗）</option>
+                    <option value="2">2 敗淘汰（雙敗）</option>
+                </select>
+            </div>
+            <div id="reset-control" class="control-group hidden">
+                <label for="reset-select">是否有重賽：</label>
+                <select id="reset-select">
+                    <option value="false" selected>否</option>
+                    <option value="true">是</option>
+                </select>
+            </div>
+            <button id="apply-settings-btn" class="btn-generate" type="button" onclick="applyTournamentSettings()">重新產生賽程</button>
+            <button id="revert-settings-btn" class="btn-secondary hidden" type="button" onclick="revertPendingSettings()">取消變更</button>
+            <span id="pending-settings-badge" class="pending-settings-badge hidden">設定已變更，尚未套用</span>
+        </div>
+        <div id="format-note" class="format-note hidden"></div>
+        <div class="hint">提示：單敗支援 2–128 隊，非 2 的次方會自動補入輪空；雙敗仍只支援 4/8/16/32/64/128 隊。選擇雙敗時可設定是否有重賽；修改隊伍數、淘汰機制或重賽設定不會立刻清空，按「套用設定並重新產生」並確認後才會重建賽程。修改第一輪隊名會自動同步後續賽程；重選勝方會清除受影響的後續結果。</div>
+    </header>
+
+    <div class="leaderboard-section">
+        <table class="leaderboard-table">
+            <thead>
+                <tr><th>排名</th><th>隊伍名稱</th><th>勝場</th><th>敗場</th><th>勝率</th><th>目前狀態</th></tr>
+            </thead>
+            <tbody id="leaderboard-body"></tbody>
+        </table>
+    </div>
+
+    <div class="arena-wrapper">
+        <div class="arena-title" id="arena-main-title"></div>
+        <div id="pyramid-canvas" class="pyramid-container">
+            <svg id="bracket-lines" class="bracket-lines" aria-hidden="true"></svg>
+            <div id="left-wing" class="wing"></div>
+            <div id="center-arena" class="center-arena"></div>
+            <div id="right-wing" class="wing"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let teamCount = 4;
+    let maxLosses = 1;
+    let hasGrandFinalReset = false;
+    let bracketSize = 4;
+    let byeCount = 0;
+    let tournamentData = {};
+    let teamStats = {};
+    let teamNames = [];
+    let grandChampion = null;
+    let winnerRoutes = {};
+    let loserRoutes = {};
+    let matchOrder = [];
+    let columns = { winners: [], losers: [] };
+
+    const API_BASE_URL = 'https://tournament-manager-6944330ef027.herokuapp.com';
+    let authToken = localStorage.getItem('tm_access_token') || null;
+    let currentUser = null;
+    let currentTournamentId = null;
+
+    window.onload = async function() {
+        setupTournamentControls();
+        await bootstrapAuth();
+    };
+
+    function setupTournamentControls() {
+        populateTeamSelectOptions();
+        document.getElementById('teams-select').addEventListener('change', handlePendingSettingsChange);
+        document.getElementById('loss-select').addEventListener('change', handlePendingSettingsChange);
+        document.getElementById('reset-select').addEventListener('change', handlePendingSettingsChange);
+        updatePendingSettingsUI();
+    }
+
+    function setMessage(id, message, type = '') {
+        const node = document.getElementById(id);
+        if (!node) return;
+        node.className = `message ${type || ''}`.trim();
+        node.innerText = message || '';
+    }
+
+    function setSaveStatus(statusClass, message) {
+        const status = document.getElementById('save-status');
+        if (!status) return;
+        status.className = `save-status ${statusClass || ''}`.trim();
+        status.innerText = message;
+    }
+
+    function showToast(message, type = 'success', duration = 2600) {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+
+        const toast = document.createElement('div');
+        toast.className = `toast ${type || 'info'}`.trim();
+        toast.innerText = message;
+        container.appendChild(toast);
+
+        window.setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(-6px)';
+            toast.style.transition = 'opacity 0.18s ease, transform 0.18s ease';
+            window.setTimeout(() => toast.remove(), 220);
+        }, duration);
+    }
+
+    function clearAuthForms() {
+        [
+            'login-email', 'login-password',
+            'register-username', 'register-email', 'register-password',
+            'forgot-email', 'reset-token', 'reset-new-password',
+            'current-password', 'new-password', 'delete-password'
+        ].forEach((id) => {
+            const node = document.getElementById(id);
+            if (node) node.value = '';
+        });
+
+        ['auth-message', 'profile-message', 'dashboard-message'].forEach((id) => setMessage(id, ''));
+    }
+
+    function getArenaScrollPosition() {
+        const wrapper = document.querySelector('.arena-wrapper');
+        return wrapper ? { left: wrapper.scrollLeft, top: wrapper.scrollTop } : null;
+    }
+
+    function restoreArenaScrollPosition(position) {
+        if (!position) return;
+        const wrapper = document.querySelector('.arena-wrapper');
+        if (!wrapper) return;
+        wrapper.scrollLeft = position.left;
+        wrapper.scrollTop = position.top;
+    }
+
+    function refreshBracketLayout() {
+        alignBracketLayout();
+        drawBracketLines();
+    }
+
+    function renderTreePreserveScroll() {
+        const wrapper = document.querySelector('.arena-wrapper');
+        const position = getArenaScrollPosition();
+        if (wrapper) wrapper.classList.add('preserve-scroll-lock');
+
+        renderTree({ deferLayout: false });
+        restoreArenaScrollPosition(position);
+        refreshBracketLayout();
+        restoreArenaScrollPosition(position);
+
+        requestAnimationFrame(() => {
+            restoreArenaScrollPosition(position);
+            refreshBracketLayout();
+            restoreArenaScrollPosition(position);
+            if (wrapper) wrapper.classList.remove('preserve-scroll-lock');
+        });
+    }
+
+    async function apiFetch(path, options = {}, requireAuth = true) {
+        const headers = { ...(options.headers || {}) };
+        if (!headers['Content-Type'] && options.body) headers['Content-Type'] = 'application/json';
+        if (requireAuth && authToken) headers.Authorization = `Bearer ${authToken}`;
+        const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+        if (response.status === 401 && requireAuth) {
+            logoutUser(false);
+            throw new Error('請重新登入');
+        }
+        const text = await response.text();
+        const data = text ? JSON.parse(text) : null;
+        if (!response.ok) {
+            const detail = data?.detail || `HTTP ${response.status}`;
+            throw new Error(Array.isArray(detail) ? detail.map((item) => item.msg).join('\n') : detail);
+        }
+        return data;
+    }
+
+    async function bootstrapAuth() {
+        if (!authToken) {
+            showAuthView();
+            return;
+        }
+        try {
+            currentUser = await apiFetch('/auth/me');
+            showDashboardView();
+        } catch (error) {
+            console.error(error);
+            logoutUser(false);
+        }
+    }
+
+    function setAuthMode(mode) {
+        ['login', 'register', 'forgot'].forEach((name) => {
+            document.getElementById(`${name}-form`).classList.toggle('hidden', name !== mode);
+            document.getElementById(`${name}-tab`).classList.toggle('active', name === mode);
+        });
+        setMessage('auth-message', '');
+    }
+
+    function showAuthView() {
+        document.getElementById('auth-app').classList.remove('hidden');
+        document.getElementById('dashboard-app').classList.add('hidden');
+        document.getElementById('tournament-app').classList.add('hidden');
+    }
+
+    async function showDashboardView() {
+        document.getElementById('auth-app').classList.add('hidden');
+        document.getElementById('dashboard-app').classList.remove('hidden');
+        document.getElementById('tournament-app').classList.add('hidden');
+        updateUserLabels();
+        await loadSavedTournaments();
+    }
+
+    function showTournamentView() {
+        document.getElementById('auth-app').classList.add('hidden');
+        document.getElementById('dashboard-app').classList.add('hidden');
+        document.getElementById('tournament-app').classList.remove('hidden');
+        updateUserLabels();
+        setSaveStatus('', currentTournamentId ? `已載入賽程 #${currentTournamentId}` : '新賽程尚未儲存');
+        requestAnimationFrame(() => {
+            alignBracketLayout();
+            requestAnimationFrame(drawBracketLines);
+        });
+    }
+
+    function updateUserLabels() {
+        const label = currentUser ? `${currentUser.username} (${currentUser.email})` : '尚未登入';
+        const dash = document.getElementById('dashboard-user-pill');
+        const editor = document.getElementById('editor-user-pill');
+        const summary = document.getElementById('profile-summary');
+        if (dash) dash.innerText = label;
+        if (editor) editor.innerText = currentUser ? `賽程編輯器｜${label}` : '賽程編輯器';
+        if (summary && currentUser) summary.innerText = `Username: ${currentUser.username}
+Email: ${currentUser.email}
+User ID: ${currentUser.id}`;
+    }
+
+    async function registerUser(event) {
+        event.preventDefault();
+        try {
+            const payload = {
+                username: document.getElementById('register-username').value.trim(),
+                email: document.getElementById('register-email').value.trim(),
+                password: document.getElementById('register-password').value,
+            };
+            const data = await apiFetch('/auth/register', { method: 'POST', body: JSON.stringify(payload) }, false);
+            authToken = data.access_token;
+            currentUser = data.user;
+            localStorage.setItem('tm_access_token', authToken);
+            clearAuthForms();
+            showToast('帳號建立成功，已登入。', 'success');
+            await showDashboardView();
+        } catch (error) {
+            setMessage('auth-message', error.message, 'error');
+        }
+    }
+
+    async function loginUser(event) {
+        event.preventDefault();
+        try {
+            const payload = {
+                email: document.getElementById('login-email').value.trim(),
+                password: document.getElementById('login-password').value,
+            };
+            const data = await apiFetch('/auth/login', { method: 'POST', body: JSON.stringify(payload) }, false);
+            authToken = data.access_token;
+            currentUser = data.user;
+            localStorage.setItem('tm_access_token', authToken);
+            clearAuthForms();
+            await showDashboardView();
+        } catch (error) {
+            setMessage('auth-message', error.message, 'error');
+        }
+    }
+
+    function logoutUser(showMessage = true) {
+        authToken = null;
+        currentUser = null;
+        currentTournamentId = null;
+        localStorage.removeItem('tm_access_token');
+        clearAuthForms();
+        setAuthMode('login');
+        showAuthView();
+        if (showMessage) setMessage('auth-message', '已登出。', 'success');
+    }
+
+    async function requestPasswordReset() {
+        try {
+            const email = document.getElementById('forgot-email').value.trim();
+            const data = await apiFetch('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }, false);
+            if (data.reset_token) {
+                document.getElementById('reset-token').value = data.reset_token;
+                setMessage('auth-message', `Reset token 已產生：
+${data.reset_token}`, 'success');
+            } else {
+                setMessage('auth-message', data.message, 'success');
+            }
+        } catch (error) {
+            setMessage('auth-message', error.message, 'error');
+        }
+    }
+
+    async function resetPasswordWithToken() {
+        try {
+            const payload = {
+                token: document.getElementById('reset-token').value.trim(),
+                new_password: document.getElementById('reset-new-password').value,
+            };
+            await apiFetch('/auth/reset-password', { method: 'POST', body: JSON.stringify(payload) }, false);
+            setMessage('auth-message', '密碼已重設，請回到登入頁登入。', 'success');
+            setAuthMode('login');
+        } catch (error) {
+            setMessage('auth-message', error.message, 'error');
+        }
+    }
+
+    async function changePassword() {
+        try {
+            const payload = {
+                current_password: document.getElementById('current-password').value,
+                new_password: document.getElementById('new-password').value,
+            };
+            await apiFetch('/account/password', { method: 'PUT', body: JSON.stringify(payload) });
+            document.getElementById('current-password').value = '';
+            document.getElementById('new-password').value = '';
+            setMessage('profile-message', '密碼已更新。', 'success');
+        } catch (error) {
+            setMessage('profile-message', error.message, 'error');
+        }
+    }
+
+    async function deleteAccount() {
+        const password = document.getElementById('delete-password').value;
+        if (!confirm('確定要刪除帳號？這會刪除你的所有賽程，無法復原。')) return;
+        try {
+            await apiFetch('/account', { method: 'DELETE', body: JSON.stringify({ password }) });
+            logoutUser(false);
+            setMessage('auth-message', '帳號已刪除。', 'success');
+        } catch (error) {
+            setMessage('profile-message', error.message, 'error');
+        }
+    }
+
+    async function refreshDashboard() {
+        await loadSavedTournaments();
+    }
+
+    async function loadSavedTournaments() {
+        const container = document.getElementById('saved-tournaments-list');
+        if (!container) return;
+        container.innerHTML = '<div class="small-note">讀取中...</div>';
+        try {
+            const tournaments = await apiFetch('/tournaments');
+            if (!tournaments.length) {
+                container.innerHTML = '<div class="small-note">目前沒有已儲存賽程。建立新賽程後，可以隨時儲存在這裡。</div>';
+                return;
+            }
+            container.innerHTML = '';
+            tournaments.forEach((item) => {
+                const div = document.createElement('div');
+                div.className = 'saved-item';
+                const modeText = item.max_losses === 2 ? '雙敗' : '單敗';
+                div.innerHTML = `
+                    <div>
+                        <div class="saved-title">${escapeHtml(item.title)}</div>
+                        <div class="saved-meta">狀態：${item.champion ? `已完成，冠軍 ${escapeHtml(item.champion)}` : '進行中'}｜${item.team_count || '—'} 隊｜${modeText}｜更新：${formatDateTimeForDisplay(item.updated_at)}</div>
+                    </div>
+                    <div class="saved-actions">
+                        <button class="btn-secondary" type="button" onclick="openTournament(${item.id})">載入</button>
+                        <button class="btn-danger" type="button" onclick="deleteTournament(${item.id})">刪除</button>
+                    </div>`;
+                container.appendChild(div);
+            });
+        } catch (error) {
+            container.innerHTML = '';
+            setMessage('dashboard-message', error.message, 'error');
+        }
+    }
+
+    function startNewTournament() {
+        currentTournamentId = null;
+        const titleInput = document.getElementById('tournament-title-input');
+        if (titleInput) titleInput.value = `新賽程 ${formatDateTimeForDisplay(new Date().toISOString())}`;
+        initTournament();
+        showTournamentView();
+    }
+
+    async function openTournament(id) {
+        try {
+            const item = await apiFetch(`/tournaments/${id}`);
+            currentTournamentId = item.id;
+            document.getElementById('tournament-title-input').value = item.title;
+            applyTournamentStatePayload(item.state || {});
+            showTournamentView();
+        } catch (error) {
+            setMessage('dashboard-message', error.message, 'error');
+        }
+    }
+
+    async function deleteTournament(id) {
+        if (!confirm('確定要刪除這份賽程？')) return;
+        try {
+            await apiFetch(`/tournaments/${id}`, { method: 'DELETE' });
+            await loadSavedTournaments();
+        } catch (error) {
+            setMessage('dashboard-message', error.message, 'error');
+        }
+    }
+
+    function buildTournamentStatePayload() {
+        return {
+            teamCount,
+            maxLosses,
+            hasGrandFinalReset,
+            bracketSize,
+            byeCount,
+            tournamentData,
+            teamStats,
+            teamNames,
+            grandChampion,
+            winnerRoutes,
+            loserRoutes,
+            matchOrder,
+            columns,
+            savedAt: new Date().toISOString()
+        };
+    }
+
+    function applyTournamentStatePayload(state) {
+        teamCount = state.teamCount || 4;
+        maxLosses = state.maxLosses || 1;
+        hasGrandFinalReset = !!state.hasGrandFinalReset;
+        bracketSize = state.bracketSize || getBracketSizeFor(teamCount, maxLosses);
+        byeCount = state.byeCount ?? getByeCountFor(teamCount, maxLosses);
+        tournamentData = state.tournamentData || {};
+        teamStats = state.teamStats || {};
+        teamNames = state.teamNames || Array.from({ length: teamCount }, (_, index) => `Team ${index + 1}`);
+        grandChampion = state.grandChampion || null;
+        winnerRoutes = state.winnerRoutes || {};
+        loserRoutes = state.loserRoutes || {};
+        matchOrder = state.matchOrder || [];
+        columns = state.columns || { winners: [], losers: [] };
+
+        const teamsSelect = document.getElementById('teams-select');
+        const lossSelect = document.getElementById('loss-select');
+        const resetSelect = document.getElementById('reset-select');
+        if (teamsSelect) teamsSelect.value = String(teamCount);
+        if (lossSelect) lossSelect.value = String(maxLosses);
+        if (resetSelect) resetSelect.value = String(hasGrandFinalReset);
+
+        if (!Object.keys(tournamentData).length || !matchOrder.length) {
+            tournamentData = {};
+            teamStats = {};
+            winnerRoutes = {};
+            loserRoutes = {};
+            matchOrder = [];
+            columns = { winners: [], losers: [] };
+            buildTopology();
+            seedOpeningRound();
+            resolveAutomaticByes();
+        }
+
+        const bracketText = byeCount > 0 ? `，${bracketSize} 格 / ${byeCount} 輪空` : '';
+        const resetText = maxLosses === 2 ? `，${describeResetMode(hasGrandFinalReset)}` : '';
+        document.getElementById('arena-main-title').innerText = `${describeMode(maxLosses)}淘汰賽程（${teamCount} 隊${bracketText}${resetText}）`;
+
+        const canvas = document.getElementById('pyramid-canvas');
+        canvas.classList.toggle('single-wing', maxLosses === 1);
+
+        renderTree();
+        recalculateStats();
+        updatePendingSettingsUI();
+    }
+
+    async function saveCurrentTournament() {
+        const titleInput = document.getElementById('tournament-title-input');
+        const defaultTitle = grandChampion
+            ? `${grandChampion} 冠軍賽程`
+            : `進行中賽程 ${formatDateTimeForDisplay(new Date().toISOString())}`;
+        const title = (titleInput?.value || '').trim() || defaultTitle;
+        const payload = {
+            title,
+            champion: grandChampion || null,
+            team_count: teamCount,
+            max_losses: maxLosses,
+            has_grand_final_reset: hasGrandFinalReset,
+            state: buildTournamentStatePayload(),
+        };
+        try {
+            setSaveStatus('saving', '儲存中...');
+            let item;
+            if (currentTournamentId) {
+                item = await apiFetch(`/tournaments/${currentTournamentId}`, { method: 'PUT', body: JSON.stringify(payload) });
+            } else {
+                item = await apiFetch('/tournaments', { method: 'POST', body: JSON.stringify(payload) });
+                currentTournamentId = item.id;
+            }
+            if (titleInput) titleInput.value = item.title;
+            const statusText = item.champion ? `已儲存完成賽程 #${item.id}` : `已儲存進行中賽程 #${item.id}`;
+            setSaveStatus('saved', statusText);
+            showToast('✅ 已儲存賽程', 'success');
+        } catch (error) {
+            setSaveStatus('error', '儲存失敗');
+            showToast(`❌ 儲存失敗：${error.message}`, 'error', 4200);
+        }
+    }
+
+    const saveCompletedTournament = saveCurrentTournament;
+
+    function formatDateTimeForDisplay(value) {
+        if (!value) return '—';
+        const date = value instanceof Date ? value : new Date(value);
+        if (Number.isNaN(date.getTime())) return String(value);
+        return date.toLocaleString('zh-TW', { hour12: false });
+    }
+
+    function getSelectedTeamCount() {
+        return parseInt(document.getElementById('teams-select').value, 10);
+    }
+
+    function getSelectedMaxLosses() {
+        return parseInt(document.getElementById('loss-select').value, 10);
+    }
+
+    function getSelectedHasGrandFinalReset() {
+        return getSelectedMaxLosses() === 2 && document.getElementById('reset-select').value === 'true';
+    }
+
+    function populateTeamSelectOptions() {
+        const select = document.getElementById('teams-select');
+        if (!select) return;
+        select.innerHTML = '';
+        for (let count = 2; count <= 128; count++) {
+            const option = document.createElement('option');
+            option.value = String(count);
+            option.textContent = isSupportedDoubleEliminationCount(count)
+                ? `${count} 隊`
+                : `${count} 隊（單敗）`;
+            if (count === teamCount) option.selected = true;
+            select.appendChild(option);
+        }
+    }
+
+    // 判斷是否為 2 的次方
+    function isPowerOfTwo(value) {
+        return Number.isInteger(value) && value > 0 && (value & (value - 1)) === 0;
+    }
+
+    function isSupportedDoubleEliminationCount(value) {
+        return isPowerOfTwo(value) && value >= 4 && value <= 128;
+    }
+
+    function getBracketSizeFor(teamTotal, lossCount) {
+        if (lossCount === 1) return nextPowerOfTwo(teamTotal);
+        return teamTotal;
+    }
+
+    function nextPowerOfTwo(value) {
+        let size = 1;
+        while (size < value) size *= 2;
+        return size;
+    }
+
+    function getByeCountFor(teamTotal, lossCount) {
+        if (lossCount !== 1) return 0;
+        return getBracketSizeFor(teamTotal, lossCount) - teamTotal;
+    }
+
+    function isValidTournamentSetting(teamTotal, lossCount) {
+        if (lossCount === 1) return teamTotal >= 2 && teamTotal <= 128;
+        return isSupportedDoubleEliminationCount(teamTotal);
+    }
+
+    function getTournamentSettingWarning(teamTotal, lossCount) {
+        if (lossCount === 2 && !isSupportedDoubleEliminationCount(teamTotal)) {
+            return '雙敗淘汰目前只支援 4/8/16/32/64/128 隊；非 2 的次方隊伍數請使用單敗。';
+        }
+        if (lossCount === 1 && getByeCountFor(teamTotal, lossCount) > 0) {
+            return `${teamTotal} 隊單敗會自動補入 ${getByeCountFor(teamTotal, lossCount)} 個輪空，賽程格數為 ${getBracketSizeFor(teamTotal, lossCount)}。`;
+        }
+        return '';
+    }
+
+    function refreshSettingsOptionAvailability() {
+        const teamSelect = document.getElementById('teams-select');
+        const lossSelect = document.getElementById('loss-select');
+        if (!teamSelect || !lossSelect) return;
+
+        const selectedTeamCount = getSelectedTeamCount();
+        const selectedMaxLosses = getSelectedMaxLosses();
+        const doubleOption = Array.from(lossSelect.options).find((option) => option.value === '2');
+        if (doubleOption) doubleOption.disabled = !isSupportedDoubleEliminationCount(selectedTeamCount);
+
+        Array.from(teamSelect.options).forEach((option) => {
+            const count = parseInt(option.value, 10);
+            option.disabled = selectedMaxLosses === 2 && !isSupportedDoubleEliminationCount(count);
+        });
+    }
+
+    function describeMode(lossCount) {
+        return lossCount === 1 ? '單敗' : '雙敗';
+    }
+
+    function describeResetMode(resetEnabled) {
+        return resetEnabled ? '有重賽' : '無重賽';
+    }
+
+    function describeTournamentSetting(teamTotal, lossCount, resetEnabled) {
+        const resetText = lossCount === 2 ? ` / ${describeResetMode(resetEnabled)}` : '';
+        return `${teamTotal} 隊 / ${describeMode(lossCount)}${resetText}`;
+    }
+
+    function hasPlayedMatches() {
+        return matchOrder.some((id) => tournamentData[id]?.winner !== null && !matchHasBye(id));
+    }
+
+    function hasCustomizedTeamNames() {
+        return teamNames.some((name, index) => name !== `Team ${index + 1}`);
+    }
+
+    function hasTournamentStateToClear() {
+        return hasPlayedMatches() || hasCustomizedTeamNames() || !!grandChampion;
+    }
+
+    function hasPendingSettings() {
+        return getSelectedTeamCount() !== teamCount
+            || getSelectedMaxLosses() !== maxLosses
+            || getSelectedHasGrandFinalReset() !== hasGrandFinalReset;
+    }
+
+    function handlePendingSettingsChange() {
+        refreshSettingsOptionAvailability();
+        updatePendingSettingsUI();
+    }
+
+    function updatePendingSettingsUI() {
+        refreshSettingsOptionAvailability();
+        const pending = hasPendingSettings();
+        const selectedTeamCount = getSelectedTeamCount();
+        const selectedMaxLosses = getSelectedMaxLosses();
+        const selectedHasReset = getSelectedHasGrandFinalReset();
+        const validSetting = isValidTournamentSetting(selectedTeamCount, selectedMaxLosses);
+        const settingWarning = getTournamentSettingWarning(selectedTeamCount, selectedMaxLosses);
+        const badge = document.getElementById('pending-settings-badge');
+        const revertButton = document.getElementById('revert-settings-btn');
+        const applyButton = document.getElementById('apply-settings-btn');
+        const teamsControl = document.getElementById('teams-control');
+        const lossControl = document.getElementById('loss-control');
+        const resetControl = document.getElementById('reset-control');
+        const formatNote = document.getElementById('format-note');
+
+        if (resetControl) resetControl.classList.toggle('hidden', selectedMaxLosses !== 2);
+
+        if (badge) {
+            badge.classList.toggle('hidden', !pending && validSetting);
+            if (!validSetting) badge.innerText = settingWarning;
+            else badge.innerText = pending
+                ? `尚未套用：${describeTournamentSetting(selectedTeamCount, selectedMaxLosses, selectedHasReset)}`
+                : '設定已套用';
+        }
+        if (formatNote) {
+            formatNote.classList.toggle('hidden', !settingWarning || !validSetting);
+            formatNote.innerText = validSetting ? settingWarning : '';
+        }
+        if (revertButton) revertButton.classList.toggle('hidden', !pending);
+        if (applyButton) {
+            applyButton.innerText = pending ? '套用設定並重新產生' : '重新產生賽程';
+            applyButton.disabled = !validSetting;
+            applyButton.title = validSetting ? '' : settingWarning;
+        }
+        if (teamsControl) teamsControl.classList.toggle('pending', selectedTeamCount !== teamCount);
+        if (lossControl) lossControl.classList.toggle('pending', selectedMaxLosses !== maxLosses);
+        if (resetControl) resetControl.classList.toggle('pending', selectedHasReset !== hasGrandFinalReset);
+    }
+
+    function revertPendingSettings() {
+        document.getElementById('teams-select').value = String(teamCount);
+        document.getElementById('loss-select').value = String(maxLosses);
+        document.getElementById('reset-select').value = String(hasGrandFinalReset);
+        updatePendingSettingsUI();
+    }
+
+    function applyTournamentSettings() {
+        const selectedTeamCount = getSelectedTeamCount();
+        const selectedMaxLosses = getSelectedMaxLosses();
+        const selectedHasReset = getSelectedHasGrandFinalReset();
+        if (!isValidTournamentSetting(selectedTeamCount, selectedMaxLosses)) {
+            alert(getTournamentSettingWarning(selectedTeamCount, selectedMaxLosses));
+            updatePendingSettingsUI();
+            return;
+        }
+        const pending = selectedTeamCount !== teamCount
+            || selectedMaxLosses !== maxLosses
+            || selectedHasReset !== hasGrandFinalReset;
+        const warning = pending
+            ? `套用 ${describeTournamentSetting(selectedTeamCount, selectedMaxLosses, selectedHasReset)} 會重新產生賽程，並清除目前隊名與比賽紀錄。確定要繼續？`
+            : '重新產生會清除目前隊名與比賽紀錄。確定要繼續？';
+
+        if ((pending || hasTournamentStateToClear()) && !confirm(warning)) {
+            updatePendingSettingsUI();
+            return;
+        }
+
+        teamCount = selectedTeamCount;
+        maxLosses = selectedMaxLosses;
+        hasGrandFinalReset = selectedMaxLosses === 2 && selectedHasReset;
+        document.getElementById('reset-select').value = String(hasGrandFinalReset);
+        initTournament();
+        updatePendingSettingsUI();
+    }
+
+    function initTournament() {
+        tournamentData = {};
+        teamStats = {};
+        teamNames = Array.from({ length: teamCount }, (_, index) => `Team ${index + 1}`);
+        grandChampion = null;
+        winnerRoutes = {};
+        loserRoutes = {};
+        matchOrder = [];
+        columns = { winners: [], losers: [] };
+        bracketSize = getBracketSizeFor(teamCount, maxLosses);
+        byeCount = getByeCountFor(teamCount, maxLosses);
+
+        teamNames.forEach((name) => { teamStats[name] = { w: 0, l: 0, out: false }; });
+        const bracketText = byeCount > 0 ? `，${bracketSize} 格 / ${byeCount} 輪空` : '';
+        const resetText = maxLosses === 2 ? `，${describeResetMode(hasGrandFinalReset)}` : '';
+        document.getElementById('arena-main-title').innerText = `${describeMode(maxLosses)}淘汰賽程（${teamCount} 隊${bracketText}${resetText}）`;
+
+        const canvas = document.getElementById('pyramid-canvas');
+        canvas.classList.toggle('single-wing', maxLosses === 1);
+
+        buildTopology();
+        seedOpeningRound();
+        resolveAutomaticByes();
+        renderTree();
+        recalculateStats();
+    }
+
+    function createMatch(id, label, side, roundKey) {
+        if (!tournamentData[id]) tournamentData[id] = { slot1: '', slot2: '', winner: null, label };
+        matchOrder.push(id);
+        columns[side].push({ id, roundKey });
+    }
+
+    function addRoute(fromId, winnerRoute, loserRoute = null) {
+        winnerRoutes[fromId] = winnerRoute;
+        if (loserRoute) loserRoutes[fromId] = loserRoute;
+    }
+
+    function buildTopology() {
+        const rounds = Math.log2(bracketSize);
+        let wMatches = bracketSize / 2;
+
+        for (let round = 1; round <= rounds; round++) {
+            for (let match = 1; match <= wMatches; match++) {
+                createMatch(`W_R1_M${match}`, `勝部 R${round} - 場 ${match}`, 'winners', `勝部 R${round}`);
+            }
+            wMatches /= 2;
+        }
+
+        // 修改：確保 matchOrder 與結構生成在任何隊伍數時都統一名稱（修正原本 hardcode 問題）
+        matchOrder = [];
+        columns.winners = [];
+        columns.losers = [];
+        tournamentData = {};
+
+        wMatches = bracketSize / 2;
+        for (let round = 1; round <= rounds; round++) {
+            for (let match = 1; match <= wMatches; match++) {
+                createMatch(`W_R${round}_M${match}`, `勝部 R${round} - 場 ${match}`, 'winners', `勝部 R${round}`);
+            }
+            wMatches /= 2;
+        }
+
+        if (maxLosses === 1) {
+            let matches = bracketSize / 2;
+            for (let round = 1; round <= rounds; round++) {
+                for (let match = 1; match <= matches; match++) {
+                    const id = `W_R${round}_M${match}`;
+                    if (round === rounds) addRoute(id, { isGrandFinal: true });
+                    else addRoute(id, { targetId: `W_R${round + 1}_M${Math.ceil(match / 2)}`, slot: ((match - 1) % 2) + 1 });
+                }
+                matches /= 2;
+            }
+            return;
+        }
+
+        const loserRoundCount = (rounds * 2) - 2;
+
+        function loserMatchCount(lRound) {
+            return bracketSize / Math.pow(2, Math.floor((lRound + 1) / 2) + 1);
+        }
+
+        for (let lRound = 1; lRound <= loserRoundCount; lRound++) {
+            const lMatches = loserMatchCount(lRound);
+            for (let match = 1; match <= lMatches; match++) {
+                createMatch(`L_R${lRound}_M${match}`, `敗部 R${lRound} - 場 ${match}`, 'losers', `敗部 R${lRound}`);
+            }
+        }
+
+        createMatch('GF_MATCH', 'GRAND FINAL', 'losers', '總決賽');
+        if (hasGrandFinalReset) createMatch('GF_RESET_MATCH', 'BRACKET RESET / 重賽', 'losers', '重賽');
+
+        let matches = bracketSize / 2;
+        for (let round = 1; round <= rounds; round++) {
+            for (let match = 1; match <= matches; match++) {
+                const id = `W_R${round}_M${match}`;
+                const wRoute = round === rounds
+                    ? { targetId: 'GF_MATCH', slot: 1 }
+                    : { targetId: `W_R${round + 1}_M${Math.ceil(match / 2)}`, slot: ((match - 1) % 2) + 1 };
+
+                let loserRoute;
+                if (round === 1) {
+                    loserRoute = {
+                        targetId: `L_R1_M${Math.ceil(match / 2)}`,
+                        slot: ((match - 1) % 2) + 1
+                    };
+                } else {
+                    const targetLoserRound = (round * 2) - 2;
+                    const targetLoserMatchCount = loserMatchCount(targetLoserRound);
+                    loserRoute = {
+                        targetId: `L_R${targetLoserRound}_M${targetLoserMatchCount - match + 1}`,
+                        slot: 2
+                    };
+                }
+
+                addRoute(id, wRoute, loserRoute);
+            }
+            matches /= 2;
+        }
+
+        for (let lRound = 1; lRound <= loserRoundCount; lRound++) {
+            const lMatches = loserMatchCount(lRound);
+            for (let match = 1; match <= lMatches; match++) {
+                const id = `L_R${lRound}_M${match}`;
+
+                if (lRound === loserRoundCount) {
+                    addRoute(id, { targetId: 'GF_MATCH', slot: 2 });
+                } else if (lRound % 2 === 1) {
+                    addRoute(id, { targetId: `L_R${lRound + 1}_M${match}`, slot: 1 });
+                } else {
+                    addRoute(id, {
+                        targetId: `L_R${lRound + 1}_M${Math.ceil(match / 2)}`,
+                        slot: ((match - 1) % 2) + 1
+                    });
+                }
+            }
+        }
+
+        if (!hasGrandFinalReset) addRoute('GF_MATCH', { isGrandFinal: true });
+        if (hasGrandFinalReset) addRoute('GF_RESET_MATCH', { isGrandFinal: true });
+    }
+
+    function seedOpeningRound() {
+        const matchCount = bracketSize / 2;
+        const byeMatches = getOpeningRoundByeMatches(matchCount, byeCount);
+        let teamIndex = 0;
+
+        for (let match = 1; match <= matchCount; match++) {
+            const id = `W_R1_M${match}`;
+            const hasBye = byeMatches.has(match);
+
+            tournamentData[id].slot1 = teamNames[teamIndex++] || '';
+            tournamentData[id].slot2 = hasBye ? '__BYE__' : (teamNames[teamIndex++] || '');
+
+            if (hasBye) tournamentData[id].isByeMatch = true;
+        }
+    }
+
+    function getOpeningRoundByeMatches(matchCount, byeTotal) {
+        const byeMatches = new Set();
+        if (byeTotal <= 0) return byeMatches;
+
+        for (let index = 0; index < byeTotal; index++) {
+            byeMatches.add(Math.floor(index * matchCount / byeTotal) + 1);
+        }
+
+        return byeMatches;
+    }
+
+    function renderTree(options = {}) {
+        const { deferLayout = true } = options;
+        const leftWing = document.getElementById('left-wing');
+        const rightWing = document.getElementById('right-wing');
+        const centerArena = document.getElementById('center-arena');
+        leftWing.innerHTML = '';
+        rightWing.innerHTML = '';
+        centerArena.innerHTML = '';
+
+        renderSide(leftWing, 'winners', false);
+        if (maxLosses === 2) renderSide(rightWing, 'losers', false);
+        else rightWing.innerHTML = '';
+        renderCenter(centerArena);
+
+        if (deferLayout) {
+            requestAnimationFrame(() => {
+                alignBracketLayout();
+                requestAnimationFrame(drawBracketLines);
+            });
+        }
+    }
+
+    function renderSide(container, side, hideEmptyMatches) {
+        const grouped = groupByRound(columns[side]);
+        Object.keys(grouped).forEach((roundKey) => {
+            if (roundKey === '總決賽' || roundKey === '重賽') return;
+            const col = document.createElement('div');
+            col.className = 'column';
+            col.innerHTML = `<div class="column-title">${roundKey}</div>`;
+            let hasVisibleMatch = false;
+
+            grouped[roundKey].forEach((entry) => {
+                const isVisible = !hideEmptyMatches || hasAnySlot(entry.id);
+                if (isVisible) {
+                    col.appendChild(createMatchNode(entry.id));
+                    hasVisibleMatch = true;
+                }
+            });
+
+            if (hasVisibleMatch || !hideEmptyMatches) container.appendChild(col);
+        });
+    }
+
+    function renderCenter(container) {
+        if (maxLosses === 2) {
+            container.appendChild(createMatchNode('GF_MATCH'));
+            if (hasGrandFinalReset && tournamentData.GF_RESET_MATCH) container.appendChild(createMatchNode('GF_RESET_MATCH'));
+        }
+
+        const podium = document.createElement('div');
+        podium.className = 'podium';
+        podium.innerHTML = `<div class="podium-title">🏆 GRAND CHAMPION</div><div class="podium-name">${escapeHtml(grandChampion || '尚未產生')}</div>`;
+
+        const actions = document.createElement('div');
+        actions.className = 'result-actions';
+
+        if (grandChampion) {
+            const downloadButton = document.createElement('button');
+            downloadButton.className = 'btn-download-result';
+            downloadButton.type = 'button';
+            downloadButton.innerText = '下載比賽結果';
+            downloadButton.addEventListener('click', downloadTournamentResults);
+            actions.appendChild(downloadButton);
+        }
+
+        const saveButton = document.createElement('button');
+        saveButton.className = 'btn-success';
+        saveButton.type = 'button';
+        saveButton.innerText = grandChampion ? '儲存完成賽程' : '儲存目前賽程';
+        saveButton.addEventListener('click', saveCurrentTournament);
+        actions.appendChild(saveButton);
+        podium.appendChild(actions);
+
+        container.appendChild(podium);
+    }
+
+    function groupByRound(entries) {
+        return entries.reduce((acc, entry) => {
+            if (!acc[entry.roundKey]) acc[entry.roundKey] = [];
+            acc[entry.roundKey].push(entry);
+            return acc;
+        }, {});
+    }
+
+    function hasAnySlot(id) {
+        const state = tournamentData[id];
+        return !!(state && (state.slot1 || state.slot2));
+    }
+
+    function matchHasBye(id) {
+        const state = tournamentData[id];
+        return !!(state && (state.slot1 === '__BYE__' || state.slot2 === '__BYE__'));
+    }
+
+    function createMatchNode(id) {
+        const state = tournamentData[id];
+        const box = document.createElement('div');
+        box.className = 'match-box';
+        box.dataset.matchId = id;
+        if (!hasAnySlot(id)) box.classList.add('locked');
+        box.innerHTML = `<div class="match-tag">${state.label}</div>`;
+        box.appendChild(createSlotNode(id, 1));
+        box.appendChild(createSlotNode(id, 2));
+        return box;
+    }
+
+    function createSlotNode(id, slotNum) {
+        const state = tournamentData[id];
+        const slot = document.createElement('div');
+        slot.className = 'slot';
+        slot.dataset.matchId = id;
+        slot.dataset.slot = String(slotNum);
+
+        const wrapper = document.createElement('div');
+        wrapper.style.flexGrow = '1';
+        wrapper.style.overflow = 'hidden';
+        const rawName = state[`slot${slotNum}`] || '';
+        const isBye = rawName === '__BYE__';
+        const name = isBye ? '' : rawName;
+
+        if (id.startsWith('W_R1') && !isBye) {
+            const input = document.createElement('input');
+            input.value = name;
+            input.addEventListener('change', (event) => renameTeam(name, event.target.value.trim() || name));
+            wrapper.appendChild(input);
+        } else {
+            const span = document.createElement('span');
+            span.innerText = isBye ? '輪空' : (name || getWaitingText(id, slotNum));
+            wrapper.appendChild(span);
+        }
+        slot.appendChild(wrapper);
+
+        if (isBye) slot.classList.add('bye');
+        if (state.winner === slotNum) slot.classList.add('winner');
+        else if (state.winner !== null && !isBye) slot.classList.add('loser');
+
+        if (name && !matchHasBye(id)) {
+            const btn = document.createElement('button');
+            btn.className = 'win-btn';
+            btn.innerText = state.winner === slotNum ? '取消' : '勝';
+            btn.addEventListener('click', () => {
+                if (state.winner === slotNum) cancelMatchResult(id);
+                else executeMatchResult(id, slotNum);
+                resolveAutomaticByes();
+                recalculateStats();
+                renderTreePreserveScroll();
+            });
+            slot.appendChild(btn);
+        }
+        return slot;
+    }
+
+    // 🛠️ 已修改：動態解析敗部各欄位的明確位置來源（某位置勝者或敗者）
+    function getWaitingText(id, slotNum) {
+        if (id === 'GF_MATCH') return slotNum === 1 ? '等待勝部冠軍' : '等待敗部冠軍';
+        if (id === 'GF_RESET_MATCH') return slotNum === 1 ? '等待勝部冠軍重賽' : '等待敗部冠軍重賽';
+        if (tournamentData[id]?.isByeMatch && slotNum === 1) return '等待勝部落敗者';
+        
+        if (id.startsWith('L_')) {
+            try {
+                const parts = id.split('_'); 
+                const rNum = parseInt(parts[1].replace('R', ''), 10);
+                const mNum = parseInt(parts[2].replace('M', ''), 10);
+
+                if (rNum === 1) {
+                    const wMatchSource = (mNum * 2) - (2 - slotNum);
+                    return `勝部 R1-場 ${wMatchSource} 敗者`;
+                } else if (rNum % 2 === 0) {
+                    if (slotNum === 1) {
+                        return `敗部 R${rNum - 1}-場 ${mNum} 勝者`;
+                    } else {
+                        const wRoundSource = (rNum / 2) + 1;
+                        const totalMatchesInRound = bracketSize / Math.pow(2, Math.floor((rNum + 1) / 2) + 1);
+                        const wMatchSource = totalMatchesInRound - mNum + 1;
+                        return `勝部 R${wRoundSource}-場 ${wMatchSource} 敗者`;
+                    }
+                } else {
+                    const prevMatch1 = (mNum * 2) - 1;
+                    const prevMatch2 = mNum * 2;
+                    return `敗部 R${rNum - 1}-場 ${prevMatch1}/${prevMatch2} 勝者`;
+                }
+            } catch (e) {
+                return '等待特定晉級者';
+            }
+        }
+        return '等待中';
+    }
+
+    function renameTeam(oldName, newName) {
+        if (!oldName || !newName || oldName === newName) {
+            renderTreePreserveScroll();
+            return;
+        }
+        if (teamStats[newName] && newName !== oldName) {
+            alert('隊名不可重複，請使用不同名稱。');
+            renderTreePreserveScroll();
+            return;
+        }
+
+        Object.values(tournamentData).forEach((state) => {
+            ['slot1', 'slot2'].forEach((slot) => {
+                if (state[slot] === oldName) state[slot] = newName;
+            });
+        });
+        const index = teamNames.indexOf(oldName);
+        if (index !== -1) teamNames[index] = newName;
+        teamStats[newName] = teamStats[oldName] || { w: 0, l: 0, out: false };
+        delete teamStats[oldName];
+        if (grandChampion === oldName) grandChampion = newName;
+        resolveAutomaticByes();
+        recalculateStats();
+        renderTreePreserveScroll();
+    }
+
+    function executeMatchResult(id, winnerSlot) {
+        const state = tournamentData[id];
+        if (!state) return;
+        const winnerName = state[`slot${winnerSlot}`];
+        const loserName = state[`slot${winnerSlot === 1 ? 2 : 1}`];
+        if (!winnerName) return;
+
+        cancelMatchResult(id);
+        state.winner = winnerSlot;
+
+        if (id === 'GF_MATCH' && maxLosses === 2 && hasGrandFinalReset) {
+            clearGrandFinalResetMatch();
+            if (winnerSlot === 1) {
+                grandChampion = winnerName;
+            } else {
+                grandChampion = null;
+                placeTeam('GF_RESET_MATCH', 1, state.slot1);
+                placeTeam('GF_RESET_MATCH', 2, state.slot2);
+            }
+            return;
+        }
+
+        const route = winnerRoutes[id];
+        if (route) {
+            if (route.isGrandFinal) grandChampion = winnerName;
+            else placeTeam(route.targetId, route.slot, winnerName);
+        }
+
+        const loserRoute = loserRoutes[id];
+        if (maxLosses === 2 && loserRoute && loserName && loserName !== '__BYE__') placeTeam(loserRoute.targetId, loserRoute.slot, loserName);
+    }
+
+    function clearGrandFinalResetMatch() {
+        const resetState = tournamentData.GF_RESET_MATCH;
+        if (!resetState) return;
+        cancelMatchResult('GF_RESET_MATCH');
+        resetState.slot1 = '';
+        resetState.slot2 = '';
+    }
+
+    function resolveAutomaticByes() {
+        let changed = true;
+        let guard = 0;
+        const maxIterations = Math.max(matchOrder.length * 2, 20);
+
+        while (changed && guard < maxIterations) {
+            changed = false;
+            guard += 1;
+
+            matchOrder.forEach((id) => {
+                const state = tournamentData[id];
+                if (!state || state.winner !== null) return;
+
+                const slot1 = state.slot1;
+                const slot2 = state.slot2;
+                const slot1IsTeam = !!slot1 && slot1 !== '__BYE__';
+                const slot2IsTeam = !!slot2 && slot2 !== '__BYE__';
+
+                if (slot1 === '__BYE__' && slot2 === '__BYE__') {
+                    state.isByeMatch = true;
+                    executeMatchResult(id, 1);
+                    changed = true;
+                } else if (slot1IsTeam && slot2 === '__BYE__') {
+                    state.isByeMatch = true;
+                    executeMatchResult(id, 1);
+                    changed = true;
+                } else if (slot2IsTeam && slot1 === '__BYE__') {
+                    state.isByeMatch = true;
+                    executeMatchResult(id, 2);
+                    changed = true;
+                }
+            });
+        }
+    }
+
+    function placeTeam(targetId, slot, name) {
+        if (!tournamentData[targetId]) return;
+        const target = tournamentData[targetId];
+        const slotKey = `slot${slot}`;
+        if (target[slotKey] && target[slotKey] !== name) cancelMatchResult(targetId);
+        target[slotKey] = name;
+    }
+
+    function cancelMatchResult(id) {
+        const state = tournamentData[id];
+        if (!state || state.winner === null) return;
+
+        const currentWinner = state[`slot${state.winner}`];
+        const currentLoser = state[`slot${state.winner === 1 ? 2 : 1}`];
+        state.winner = null;
+
+        if (id === 'GF_MATCH' && maxLosses === 2 && hasGrandFinalReset) {
+            clearGrandFinalResetMatch();
+            if (grandChampion === currentWinner) grandChampion = null;
+            return;
+        }
+
+        const route = winnerRoutes[id];
+        if (route && route.isGrandFinal) {
+            if (grandChampion === currentWinner) grandChampion = null;
+        } else if (route && route.targetId) {
+            removeFromRoute(route.targetId, route.slot, currentWinner);
+        }
+
+        const loserRoute = loserRoutes[id];
+        if (maxLosses === 2 && loserRoute) removeFromRoute(loserRoute.targetId, loserRoute.slot, currentLoser);
+    }
+
+    function removeFromRoute(targetId, slot, expectedName) {
+        const target = tournamentData[targetId];
+        if (!target) return;
+        cancelMatchResult(targetId);
+        const slotKey = `slot${slot}`;
+        if (!expectedName || target[slotKey] === expectedName) target[slotKey] = '';
+    }
+
+    function alignBracketLayout() {
+        layoutWing('left-wing', 'winners');
+        if (maxLosses === 2) layoutWing('right-wing', 'losers');
+        const canvas = document.getElementById('pyramid-canvas');
+        const leftWing = document.getElementById('left-wing');
+        const rightWing = document.getElementById('right-wing');
+        const centerArena = document.getElementById('center-arena');
+        const minHeight = Math.max(
+            leftWing?.offsetHeight || 0,
+            rightWing?.offsetHeight || 0,
+            centerArena?.offsetHeight || 0,
+            260
+        );
+        if (canvas) canvas.style.minHeight = `${minHeight}px`;
+    }
+
+    function layoutWing(wingId, side) {
+        const wing = document.getElementById(wingId);
+        if (!wing) return;
+        const cols = Array.from(wing.querySelectorAll('.column'));
+        if (!cols.length) return;
+
+        const titleHeight = 48;
+        const rowGap = side === 'winners' ? 34 : 30;
+        const yByMatch = new Map();
+        const sideMatchIds = new Set(columns[side].map((entry) => entry.id));
+
+        cols.forEach((col, colIndex) => {
+            const boxes = Array.from(col.querySelectorAll('.match-box'));
+            if (!boxes.length) return;
+
+            if (colIndex === 0) {
+                let cursor = titleHeight;
+                boxes.forEach((box) => {
+                    box.style.top = `${cursor}px`;
+                    yByMatch.set(box.dataset.matchId, cursor + box.offsetHeight / 2);
+                    cursor += box.offsetHeight + rowGap;
+                });
+            } else {
+                const columnPlans = boxes.map((box, index) => {
+                    const matchId = box.dataset.matchId;
+                    const incomingCenters = getIncomingSourceCenters(matchId, sideMatchIds, yByMatch);
+                    const fallback = titleHeight + index * (box.offsetHeight + rowGap) + box.offsetHeight / 2;
+                    const center = incomingCenters.length
+                        ? incomingCenters.reduce((sum, value) => sum + value, 0) / incomingCenters.length
+                        : fallback;
+                    return { box, matchId, center };
+                }).sort((a, b) => a.center - b.center);
+
+                let lastBottom = titleHeight - rowGap;
+                columnPlans.forEach((plan) => {
+                    let top = plan.center - plan.box.offsetHeight / 2;
+                    top = Math.max(titleHeight, top);
+                    if (top < lastBottom + rowGap) top = lastBottom + rowGap;
+                    plan.box.style.top = `${top}px`;
+                    const actualCenter = top + plan.box.offsetHeight / 2;
+                    yByMatch.set(plan.matchId, actualCenter);
+                    lastBottom = top + plan.box.offsetHeight;
+                });
+            }
+
+            const maxBottom = boxes.reduce((maxValue, box) => {
+                const top = parseFloat(box.style.top || '0');
+                return Math.max(maxValue, top + box.offsetHeight);
+            }, titleHeight);
+            col.style.height = `${maxBottom + 12}px`;
+        });
+
+        const wingHeight = cols.reduce((maxValue, col) => Math.max(maxValue, col.offsetHeight), 0);
+        wing.style.height = `${wingHeight}px`;
+    }
+
+    function getIncomingSourceCenters(targetId, sideMatchIds, yByMatch) {
+        const centers = [];
+        const addIfSameSide = (sourceId) => {
+            if (sideMatchIds.has(sourceId) && yByMatch.has(sourceId)) centers.push(yByMatch.get(sourceId));
+        };
+
+        Object.entries(winnerRoutes).forEach(([sourceId, route]) => {
+            if (route && route.targetId === targetId) addIfSameSide(sourceId);
+        });
+        Object.entries(loserRoutes).forEach(([sourceId, route]) => {
+            if (route && route.targetId === targetId) addIfSameSide(sourceId);
+        });
+        return centers;
+    }
+
+    function drawBracketLines() {
+        const canvas = document.getElementById('pyramid-canvas');
+        const svg = document.getElementById('bracket-lines');
+        if (!canvas || !svg) return;
+
+        const canvasRect = canvas.getBoundingClientRect();
+        svg.setAttribute('viewBox', `0 0 ${canvasRect.width} ${canvasRect.height}`);
+        svg.setAttribute('width', canvasRect.width);
+        svg.setAttribute('height', canvasRect.height);
+        svg.innerHTML = '';
+
+        Object.entries(winnerRoutes).forEach(([sourceId, route]) => {
+            if (!route || route.isGrandFinal || !route.targetId) return;
+
+            if (route.targetId === 'GF_MATCH') {
+                drawRoutePath(svg, canvasRect, sourceId, route.targetId, route.slot, 'winner');
+                return;
+            }
+
+            if (getVisualSide(sourceId) !== getVisualSide(route.targetId)) return;
+            drawRoutePath(svg, canvasRect, sourceId, route.targetId, route.slot, 'winner');
+        });
+
+        Object.entries(loserRoutes).forEach(([sourceId, route]) => {
+            if (!route || !route.targetId) return;
+            if (getVisualSide(sourceId) !== 'losers' || getVisualSide(route.targetId) !== 'losers') return;
+            drawRoutePath(svg, canvasRect, sourceId, route.targetId, route.slot, 'loser');
+        });
+    }
+
+    function getVisualSide(id) {
+        if (!id) return '';
+        if (id.startsWith('W_')) return 'winners';
+        if (id.startsWith('L_')) return 'losers';
+        if (id === 'GF_MATCH') return 'finals';
+        return '';
+    }
+
+    function drawRoutePath(svg, canvasRect, sourceId, targetId, targetSlot, routeType) {
+        const source = document.querySelector(`[data-match-id="${cssEscape(sourceId)}"].match-box`);
+        const targetSlotNode = document.querySelector(`[data-match-id="${cssEscape(targetId)}"][data-slot="${targetSlot}"]`);
+        if (!source || !targetSlotNode) return;
+
+        const sourceRect = source.getBoundingClientRect();
+        const targetRect = targetSlotNode.getBoundingClientRect();
+        const sourceCenterX = sourceRect.left + sourceRect.width / 2;
+        const targetCenterX = targetRect.left + targetRect.width / 2;
+        const leftToRight = sourceCenterX <= targetCenterX;
+
+        const x1 = (leftToRight ? sourceRect.right : sourceRect.left) - canvasRect.left;
+        const y1 = sourceRect.top + sourceRect.height / 2 - canvasRect.top;
+        const x2 = (leftToRight ? targetRect.left : targetRect.right) - canvasRect.left;
+        const y2 = targetRect.top + targetRect.height / 2 - canvasRect.top;
+        const rawMidX = x1 + (x2 - x1) / 2;
+        const direction = leftToRight ? 1 : -1;
+        const minOffset = 22;
+        const midX = Math.abs(x2 - x1) < minOffset * 2 ? x1 + direction * minOffset : rawMidX;
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', `M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`);
+        path.setAttribute('class', `route-${routeType}${isRouteActive(sourceId, routeType) ? ' active' : ''}`);
+        svg.appendChild(path);
+    }
+
+    function isRouteActive(sourceId, routeType) {
+        const state = tournamentData[sourceId];
+        if (!state || state.winner === null) return false;
+        if (routeType === 'winner') return true;
+        const loserName = state[`slot${state.winner === 1 ? 2 : 1}`];
+        return !!loserName && loserName !== '__BYE__';
+    }
+
+    function cssEscape(value) {
+        if (window.CSS && CSS.escape) return CSS.escape(value);
+        return String(value).replace(/"/g, '"');
+    }
+
+    window.addEventListener('resize', () => {
+        requestAnimationFrame(() => {
+            alignBracketLayout();
+            requestAnimationFrame(drawBracketLines);
+        });
+    });
+
+    function downloadTournamentResults() {
+        if (!grandChampion) {
+            alert('冠軍尚未出爐，還不能下載比賽結果。');
+            return;
+        }
+
+        alignBracketLayout();
+        drawBracketLines();
+
+        const html = buildTournamentReportHtml();
+        const blob = new Blob(['\uFEFF', html], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = buildTournamentReportFileName();
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    }
+
+    function buildTournamentReportHtml() {
+        const generatedAt = formatLocalDateTime(new Date());
+        const baseStyle = document.querySelector('style')?.textContent || '';
+        const bracketSnapshot = buildBracketSnapshotHtml();
+        const leaderboardSnapshot = buildLeaderboardSnapshotHtml();
+        const matchRecords = buildMatchRecordsTableHtml();
+        const modeText = describeMode(maxLosses);
+
+        return `<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>比賽結果 - ${escapeHtml(grandChampion)}</title>
+    <style>
+${baseStyle}
+        body.report-body { padding: 24px; }
+        .report-page { max-width: none; margin: 0 auto; }
+        .report-hero {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(59, 130, 246, 0.08));
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 22px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .report-title { margin: 0; font-size: 1.7rem; font-weight: 900; }
+        .report-champion { margin-top: 10px; color: var(--gold); font-size: 1.35rem; font-weight: 900; }
+        .report-meta { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 15px; }
+        .report-meta span {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--soft-border);
+            border-radius: 999px;
+            padding: 6px 10px;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+        .report-section { margin-bottom: 20px; }
+        .report-section-title { margin: 0 0 10px; font-size: 1.05rem; color: #fff; }
+        .report-snapshot .arena-wrapper { margin-bottom: 0; }
+        .report-snapshot .result-actions, .report-snapshot .win-btn, .report-snapshot button { display: none !important; }
+        .report-match-table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: rgba(17, 24, 39, 0.95);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            font-size: 0.9rem;
+        }
+        .report-match-table th, .report-match-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--soft-border); }
+        .report-match-table th { background-color: rgba(255,255,255,0.04); color: var(--text-muted); }
+        .report-empty { color: var(--text-muted); background-color: rgba(17, 24, 39, 0.95); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+        @media print {
+            body.report-body { background: #fff; color: #111827; }
+            .report-hero, .leaderboard-section, .arena-wrapper, .report-match-table, .report-empty { break-inside: avoid; }
+        }
+    </style>
+</head>
+<body class="report-body">
+    <div class="report-page">
+        <section class="report-hero">
+            <h1 class="report-title">淘汰賽比賽結果</h1>
+            <div class="report-champion">🏆 總冠軍：${escapeHtml(grandChampion)}</div>
+            <div class="report-meta">
+                <span>隊伍數：${teamCount} 隊</span>
+                <span>淘汰機制：${modeText}</span>
+                ${maxLosses === 2 ? `<span>是否有重賽：${hasGrandFinalReset ? '是' : '否'}</span>` : ''}
+                ${byeCount > 0 ? `<span>賽程格數：${bracketSize} 格 / ${byeCount} 輪空</span>` : ''}
+                <span>產生時間：${escapeHtml(generatedAt)}</span>
+            </div>
+        </section>
+        <section class="report-section report-snapshot">
+            <h2 class="report-section-title">完整樹狀賽程圖</h2>
+            ${bracketSnapshot}
+        </section>
+        <section class="report-section">
+            <h2 class="report-section-title">最終排行榜</h2>
+            ${leaderboardSnapshot}
+        </section>
+        <section class="report-section">
+            <h2 class="report-section-title">已完成對戰紀錄</h2>
+            ${matchRecords}
+        </section>
+    </div>
+</body>
+</html>`;
+    }
+
+    function buildBracketSnapshotHtml() {
+        const source = document.querySelector('.arena-wrapper');
+        if (!source) return '<div class="report-empty">找不到賽程圖。</div>';
+
+        const clone = source.cloneNode(true);
+        const sourceCanvas = document.getElementById('pyramid-canvas');
+        const cloneCanvas = clone.querySelector('#pyramid-canvas');
+
+        clone.querySelectorAll('.result-actions, button').forEach((node) => node.remove());
+        clone.querySelectorAll('input').forEach((input) => {
+            const span = document.createElement('span');
+            span.innerText = input.value || input.getAttribute('value') || '';
+            input.replaceWith(span);
+        });
+
+        if (sourceCanvas && cloneCanvas) {
+            const rect = sourceCanvas.getBoundingClientRect();
+            cloneCanvas.style.width = `${Math.ceil(rect.width)}px`;
+            cloneCanvas.style.minWidth = `${Math.ceil(rect.width)}px`;
+            cloneCanvas.style.minHeight = `${Math.ceil(rect.height)}px`;
+        }
+
+        return clone.outerHTML;
+    }
+
+    function buildLeaderboardSnapshotHtml() {
+        const source = document.querySelector('.leaderboard-section');
+        if (!source) return '<div class="report-empty">找不到排行榜。</div>';
+        const clone = source.cloneNode(true);
+        clone.style.maxHeight = 'none';
+        clone.style.overflow = 'visible';
+        return clone.outerHTML;
+    }
+
+    function buildMatchRecordsTableHtml() {
+        const rows = [];
+
+        matchOrder.forEach((id) => {
+            const state = tournamentData[id];
+            if (!state || state.winner === null || state.isByeMatch) return;
+
+            const winnerName = state[`slot${state.winner}`];
+            const loserSlot = state.winner === 1 ? 2 : 1;
+            const loserName = state[`slot${loserSlot}`];
+            if (!winnerName || winnerName === '__BYE__' || !loserName || loserName === '__BYE__') return;
+
+            rows.push({ id, label: state.label, slot1: state.slot1, slot2: state.slot2, winnerName, loserName });
+        });
+
+        if (!rows.length) return '<div class="report-empty">目前沒有可列出的正式對戰紀錄。</div>';
+
+        return `<table class="report-match-table">
+            <thead>
+                <tr><th>#</th><th>場次代號</th><th>賽程名稱</th><th>隊伍 1</th><th>隊伍 2</th><th>勝方</th><th>敗方</th></tr>
+            </thead>
+            <tbody>
+                ${rows.map((row, index) => `<tr>
+                    <td>${index + 1}</td>
+                    <td>${escapeHtml(row.id)}</td>
+                    <td>${escapeHtml(row.label)}</td>
+                    <td>${escapeHtml(row.slot1)}</td>
+                    <td>${escapeHtml(row.slot2)}</td>
+                    <td>${escapeHtml(row.winnerName)}</td>
+                    <td>${escapeHtml(row.loserName)}</td>
+                </tr>`).join('')}
+            </tbody>
+        </table>`;
+    }
+
+    function buildTournamentReportFileName() {
+        const mode = maxLosses === 1 ? 'single' : (hasGrandFinalReset ? 'double_reset' : 'double');
+        return `tournament_result_${teamCount}teams_${mode}_${formatDateForFileName(new Date())}.html`;
+    }
+
+    function formatDateForFileName(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hour = String(date.getHours()).padStart(2, '0');
+        const minute = String(date.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day}_${hour}${minute}`;
+    }
+
+    function formatLocalDateTime(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hour = String(date.getHours()).padStart(2, '0');
+        const minute = String(date.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day} ${hour}:${minute}`;
+    }
+
+    function recalculateStats() {
+        teamNames.forEach((name) => { teamStats[name] = { w: 0, l: 0, out: false }; });
+
+        matchOrder.forEach((id) => {
+            const state = tournamentData[id];
+            if (!state || state.winner === null) return;
+            const winnerName = state[`slot${state.winner}`];
+            const loserName = state[`slot${state.winner === 1 ? 2 : 1}`];
+            if (loserName === '__BYE__') return;
+            if (winnerName && winnerName !== '__BYE__' && teamStats[winnerName]) teamStats[winnerName].w += 1;
+            if (loserName && teamStats[loserName]) {
+                teamStats[loserName].l += 1;
+                teamStats[loserName].out = teamStats[loserName].l >= maxLosses;
+            }
+        });
+
+        if (grandChampion) {
+            teamNames.forEach((name) => {
+                if (teamStats[name]) teamStats[name].out = name !== grandChampion;
+            });
+        }
+
+        updateLeaderboardView();
+    }
+
+    function getFinalLoserName() {
+        if (maxLosses === 2 && hasGrandFinalReset) {
+            const resetState = tournamentData.GF_RESET_MATCH;
+            if (resetState && resetState.winner !== null) {
+                const loserSlot = resetState.winner === 1 ? 2 : 1;
+                const loserName = resetState[`slot${loserSlot}`];
+                return loserName && loserName !== '__BYE__' ? loserName : null;
+            }
+
+            const finalState = tournamentData.GF_MATCH;
+            if (finalState && finalState.winner === 1 && grandChampion) {
+                const loserName = finalState.slot2;
+                return loserName && loserName !== '__BYE__' ? loserName : null;
+            }
+            return null;
+        }
+
+        const finalState = tournamentData.GF_MATCH;
+        if (!finalState || finalState.winner === null) return null;
+        const loserSlot = finalState.winner === 1 ? 2 : 1;
+        const loserName = finalState[`slot${loserSlot}`];
+        return loserName && loserName !== '__BYE__' ? loserName : null;
+    }
+
+    function updateLeaderboardView() {
+        const tbody = document.getElementById('leaderboard-body');
+        tbody.innerHTML = '';
+
+        const sorted = teamNames.map((name) => {
+            const w = teamStats[name]?.w || 0;
+            const l = teamStats[name]?.l || 0;
+            const games = w + l;
+            return {
+                name, w, l,
+                winRate: games > 0 ? w / games : 0,
+                winRateText: games > 0 ? `${(w / games * 100).toFixed(1)}%` : '—',
+                out: teamStats[name]?.out || false
+            };
+        }).sort((a, b) => {
+            if (a.name === grandChampion) return -1;
+            if (b.name === grandChampion) return 1;
+            return b.w - a.w || b.winRate - a.winRate || a.l - b.l || naturalCompare(a.name, b.name);
+        });
+
+        const finalLoserName = getFinalLoserName();
+
+        sorted.forEach((team, index) => {
+            let statusText = team.out ? '<span class="status-out">已淘汰</span>' : '<span class="status-alive">存活中</span>';
+            if (team.name === finalLoserName) statusText = '<span class="status-out">亞軍（已淘汰）</span>';
+            if (team.name === grandChampion) statusText = '<span class="status-champion">🏆 總冠軍</span>';
+            tbody.insertAdjacentHTML('beforeend', `<tr><td>${index + 1}</td><td>${escapeHtml(team.name)}</td><td>${team.w}</td><td>${team.l}</td><td>${team.winRateText}</td><td>${statusText}</td></tr>`);
+        });
+    }
+
+    const naturalCollator = new Intl.Collator('zh-Hant', { numeric: true, sensitivity: 'base' });
+
+    function naturalCompare(a, b) {
+        return naturalCollator.compare(a, b);
+    }
+
+    function escapeHtml(value) {
+        return String(value)
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+</script>
+</body>
+</html>
