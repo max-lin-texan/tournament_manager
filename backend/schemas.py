@@ -40,6 +40,8 @@ class UserOut(BaseModel):
     id: int
     email: str
     username: str
+    role: str
+    is_active: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -78,6 +80,10 @@ class ChangePasswordRequest(BaseModel):
 
 class DeleteAccountRequest(BaseModel):
     password: str
+
+
+class AdminPasswordResetRequest(BaseModel):
+    new_password: str = Field(min_length=8)
 
 
 class TournamentBase(BaseModel):
@@ -129,3 +135,49 @@ class TournamentListItem(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+class AdminUserOut(BaseModel):
+    id: int
+    email: str
+    username: str
+    role: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AdminTournamentOut(BaseModel):
+    id: int
+    user_id: int
+    title: str
+    champion: str | None
+    team_count: int | None
+    max_losses: int | None
+    has_grand_final_reset: bool
+    completed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AdminLogOut(BaseModel):
+    id: int
+    actor_user_id: int | None
+    action: str
+    target_type: str | None
+    target_id: int | None
+    details: dict[str, Any]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AdminStatsOut(BaseModel):
+    total_users: int
+    total_members: int
+    total_admins: int
+    total_super_admins: int
+    total_tournaments: int

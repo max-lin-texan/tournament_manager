@@ -1,179 +1,98 @@
-# Tournament Manager Auth PostgreSQL v2.1
+# Tournament Manager
 
-這是你的淘汰賽程管理系統 v2.1：
+可登入、可保存的淘汰賽管理系統（單敗/雙敗）。
 
-- 前端：單一 `frontend/index.html`，保留原本 tournament bracket HTML / JavaScript 賽程邏輯
-- 後端：FastAPI
-- 資料庫：PostgreSQL
-- ORM：SQLAlchemy
-- 新增：使用者註冊、登入、登出、忘記密碼、本機 reset token、更換密碼、刪除帳號
-- 新增：每個使用者可以儲存多份進行中或已完成的賽程
-
+- 前端：`frontend/index.html`（單頁應用，含賽程互動與統計邏輯）
+- 後端：`FastAPI` + `SQLAlchemy`
+- 資料庫：`PostgreSQL`
+- 驗證：`JWT`（Bearer token）
 
 ---
 
-## v2.1 改善內容
+## 功能總覽
 
-這版針對實際操作時發現的 UX 問題做了修正：
-
-1. 按「儲存目前賽程」後，右上角會跳出「已儲存賽程」提示。
-2. 賽程不需要產生冠軍也可以儲存。尚未產生冠軍時，Profile 會顯示為「進行中」。
-3. 登出後會清空登入、註冊、忘記密碼、重設密碼、更換密碼與刪除帳號欄位。
-4. 密碼欄位改用 `autocomplete="off"` 並加入常見密碼管理器忽略標記，降低瀏覽器或密碼管理器跳出提示的機率。
-   - 注意：如果警告是瀏覽器內建的外洩密碼偵測，網站端無法 100% 禁止，只能降低自動填入與誤判機率。
-5. 在敗部區點選勝負後，會保留目前水平捲動位置，不會一直跳回中間。
+- 使用者註冊、登入、登出、取得當前帳號資訊
+- 忘記密碼（開發模式回傳 reset token）、重設密碼、登入後改密碼
+- 刪除帳號（刪除後連帶刪除該使用者所有賽程）
+- 每位使用者可建立多份賽程，支援：
+  - 建立、載入、更新、刪除賽程
+  - 賽程可在「未產生冠軍」前先儲存（進行中狀態）
+  - 產生冠軍後標記為已完成
+- 前端內建賽程演算法與排行榜/匯出邏輯，後端主要負責持久化與權限控管
 
 ---
 
 ## 專案結構
 
 ```text
-tournament-manager-auth-postgres/
+tournament_manager/
 ├── backend/
-│   ├── main.py
-│   ├── auth.py
-│   ├── security.py
-│   ├── database.py
-│   ├── models.py
-│   ├── schemas.py
+│   ├── main.py                # API 入口與所有路由
+│   ├── auth.py                # Bearer token 解析與 current_user
+│   ├── security.py            # 密碼雜湊、JWT、reset token
+│   ├── database.py            # DB engine / session / Base
+│   ├── models.py              # SQLAlchemy models
+│   ├── schemas.py             # Pydantic request/response schemas
 │   ├── requirements.txt
 │   ├── .env.example
 │   └── run_backend_mac.sh
-│
 ├── frontend/
-│   ├── index.html
+│   ├── index.html             # UI + bracket 邏輯 + API 呼叫
 │   ├── package.json
 │   └── run_frontend_mac.sh
-│
-├── docker-compose.yml
+├── docker-compose.yml         # 本機 PostgreSQL
 └── README.md
 ```
 
 ---
 
-## 新版資料庫設計
+## 系統需求
 
-```text
-users
-- id
-- email
-- username
-- password_hash
-- is_active
-- created_at
-- updated_at
-
-tournaments
-- id
-- user_id
-- title
-- champion
-- team_count
-- max_losses
-- has_grand_final_reset
-- state JSONB
-- completed_at
-- created_at
-- updated_at
-
-password_reset_tokens
-- id
-- user_id
-- token_hash
-- expires_at
-- used_at
-- created_at
-```
-
-目前賽程仍使用 `state JSONB` 存整份前端賽程狀態。這樣可以保留你原本 HTML 裡完整的單敗/雙敗/輪空/晉級/排行榜邏輯。
+- Python 3.10+
+- Node.js 18+
+- Docker（或自備 PostgreSQL）
 
 ---
 
-## Step 1：啟動 PostgreSQL
+## 快速啟動（本機全端）
 
-在專案根目錄執行：
+### 1) 啟動 PostgreSQL
+
+在專案根目錄：
 
 ```bash
 docker compose up -d
 ```
 
-驗證你連到的是 Docker PostgreSQL：
-
-```bash
-export PGPASSWORD=postgres
-psql -h localhost -p 5432 -U postgres -d postgres -tAc "SELECT version();"
-```
-
-預期看到類似：
-
-```text
-PostgreSQL 16.x (Debian ...)
-```
-
-如果你之前用過舊版資料庫，想完全重來：
+重置資料庫（可選）：
 
 ```bash
 docker compose down -v
 docker compose up -d
 ```
 
-如果遇到錯誤：`Conflict. The container name "/tournament_postgres" is already in use`，代表同名容器還存在。可用以下其中一種方式處理：
+### 2) 啟動後端 API
 
-方式 A（建議，指定同一個 compose project 名稱）：
-
-```bash
-docker compose -p tournament-manager-auth-postgres down -v
-docker rm -f tournament_postgres 2>/dev/null || true
-docker compose -p tournament-manager-auth-postgres up -d
-```
-
-方式 B（快速）：
-
-```bash
-docker rm -f tournament_postgres
-docker compose up -d
-```
-
-可再用以下指令確認容器已正常啟動：
-
-```bash
-docker ps --filter name=^/tournament_postgres$
-```
-
----
-
-## Step 2：啟動後端 FastAPI
-
-開第一個 VS Code Terminal：
+開新 terminal：
 
 ```bash
 cd backend
 python3 -m venv venv
 source venv/bin/activate
-unset PIP_TARGET
-unset PYTHONPATH
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+cp .env.example .env
 python -m uvicorn main:app --reload
 ```
 
-成功後打開：
+可用網址：
 
-```text
-http://localhost:8000/docs
-```
+- Swagger: <http://localhost:8000/docs>
+- Health check: <http://localhost:8000/health>
 
-健康檢查：
+### 3) 啟動前端
 
-```text
-http://localhost:8000/health
-```
-
----
-
-## Step 3：啟動前端
-
-開第二個 VS Code Terminal：
+再開一個 terminal：
 
 ```bash
 cd frontend
@@ -181,100 +100,118 @@ npm install
 npm run dev
 ```
 
-成功後打開：
+前端網址：<http://localhost:5173>
+
+---
+
+## 環境變數（backend/.env）
+
+可參考 `backend/.env.example`：
+
+```env
+DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/tournament_db
+SECRET_KEY=replace-this-with-a-long-random-string
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
+```
+
+說明：
+
+- `DATABASE_URL`：PostgreSQL 連線字串
+- `SECRET_KEY`：JWT 簽章金鑰，正式環境必須更換為長隨機字串
+- `ACCESS_TOKEN_EXPIRE_MINUTES`：登入 token 有效分鐘數
+
+---
+
+## 主要 API
+
+### Auth
+
+- `POST /auth/register`
+- `POST /auth/login`
+- `GET /auth/me`
+- `POST /auth/forgot-password`
+- `POST /auth/reset-password`
+
+### Account
+
+- `PUT /account/password`
+- `DELETE /account`
+
+### Tournaments
+
+- `GET /tournaments`
+- `POST /tournaments`
+- `GET /tournaments/{tournament_id}`
+- `PUT /tournaments/{tournament_id}`
+- `DELETE /tournaments/{tournament_id}`
+
+註：除註冊/登入/忘記密碼外，多數操作需帶 Bearer token：
 
 ```text
-http://localhost:5173
+Authorization: Bearer <access_token>
 ```
 
 ---
 
-## 使用流程
+## 資料表設計（目前）
 
-1. 打開前端後會先看到登入頁
-2. 建立帳號或登入
-3. 進入 Profile Dashboard
-4. 點「建立新賽程」
-5. 操作賽程，可在任何階段按「儲存目前賽程」
-6. 若冠軍尚未產生，該賽程會顯示為「進行中」
-7. 若冠軍已產生，該賽程會顯示為「已完成」並記錄冠軍
-8. 回 Profile 後可以看到該賽程
-9. 可以載入、繼續編輯或刪除自己的已儲存賽程
+### users
 
----
+- `id`
+- `email`（unique）
+- `username`（unique）
+- `password_hash`
+- `role`（預設 `member`）
+- `is_active`
+- `created_at`
+- `updated_at`
 
-## API 說明
+### tournaments
 
-Auth：
+- `id`
+- `user_id`（FK -> users.id）
+- `title`
+- `champion`（可空）
+- `team_count`
+- `max_losses`
+- `has_grand_final_reset`
+- `state`（`JSONB`，保存完整賽程狀態）
+- `completed_at`
+- `created_at`
+- `updated_at`
 
-```text
-POST /auth/register
-POST /auth/login
-GET  /auth/me
-POST /auth/forgot-password
-POST /auth/reset-password
-```
+### password_reset_tokens
 
-Account：
+- `id`
+- `user_id`（FK -> users.id）
+- `token_hash`（unique）
+- `expires_at`
+- `used_at`
+- `created_at`
 
-```text
-PUT    /account/password
-DELETE /account
-```
+### admin_logs
 
-Tournaments：
-
-```text
-GET    /tournaments
-POST   /tournaments
-GET    /tournaments/{tournament_id}
-PUT    /tournaments/{tournament_id}
-DELETE /tournaments/{tournament_id}
-```
-
-`tournaments` API 都需要登入 token。前端會自動在 request header 帶：
-
-```text
-Authorization: Bearer <token>
-```
+- `id`
+- `actor_user_id`（FK -> users.id，可空）
+- `action`
+- `target_type`
+- `target_id`
+- `details`（`JSONB`）
+- `created_at`
 
 ---
 
-## 忘記密碼說明
+## 開發備註
 
-這是入門開發版，所以不會真的寄 email。
-
-流程是：
-
-1. 使用者輸入 email
-2. 後端產生 reset token
-3. 前端直接顯示 token
-4. 使用者把 token 貼到 reset 欄位並輸入新密碼
-
-正式部署時，可以把這段改成寄 email。
+- 此專案目前無 migration 工具；資料表由 `Base.metadata.create_all()` 自動建立。
+- 忘記密碼流程是開發模式：後端直接回傳 reset token，不會寄 email。
+- 前端核心邏輯集中在 `frontend/index.html`，修改前建議先備份或切分模組。
 
 ---
 
-## 重要觀念
+## 安全建議（上線前）
 
-這版的分工是：
-
-```text
-frontend/index.html
-  負責登入畫面、Profile 畫面、賽程互動、冠軍產生、呼叫 API
-
-backend/main.py
-  負責 Auth API、Account API、Tournament API
-
-backend/security.py
-  負責 password hash、JWT token、reset token
-
-backend/models.py
-  負責 users / tournaments / password_reset_tokens 資料表
-
-PostgreSQL
-  負責永久保存使用者與使用者自己的賽程
-```
-
-目前賽程演算法仍在前端 JavaScript。後端負責儲存結果與控管使用者資料。
-# tournament_manager
+- 必換 `SECRET_KEY`
+- 收斂 CORS allow origins
+- 忘記密碼改為 email 寄送流程
+- 規劃 migration（例如 Alembic）與自動化測試

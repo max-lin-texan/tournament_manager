@@ -499,6 +499,88 @@
         .tournament-title-input { min-width: 240px; flex: 1; max-width: 520px; }
         .small-note { color: var(--text-muted); font-size: 0.82rem; line-height: 1.45; }
 
+
+        .admin-page {
+            max-width: 1120px;
+            margin: 0 auto;
+        }
+        .admin-section {
+            background-color: rgba(17, 24, 39, 0.95);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 18px;
+            margin-bottom: 18px;
+            box-shadow: 0 22px 60px rgba(0,0,0,0.18);
+        }
+        .admin-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+        @media (max-width: 900px) { .admin-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        @media (max-width: 560px) { .admin-grid { grid-template-columns: 1fr; } }
+        .admin-stat-card {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--soft-border);
+            border-radius: 12px;
+            padding: 14px;
+        }
+        .admin-stat-value {
+            font-size: 1.6rem;
+            font-weight: 900;
+            color: #fff;
+            margin-top: 4px;
+        }
+        .admin-stat-label {
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            font-weight: 800;
+        }
+        .admin-table-wrapper {
+            overflow-x: auto;
+        }
+        .admin-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.88rem;
+        }
+        .admin-table th, .admin-table td {
+            padding: 9px 10px;
+            text-align: left;
+            border-bottom: 1px solid var(--soft-border);
+            vertical-align: top;
+        }
+        .admin-table th {
+            color: var(--text-muted);
+            background: rgba(255,255,255,0.035);
+            font-weight: 900;
+        }
+        .role-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--soft-border);
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            font-weight: 900;
+        }
+        .role-badge.member { color: #bfdbfe; border-color: rgba(59,130,246,0.45); }
+        .role-badge.admin { color: #bbf7d0; border-color: rgba(16,185,129,0.45); }
+        .role-badge.super_admin { color: #fde68a; border-color: rgba(245,158,11,0.55); }
+        .admin-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+        .admin-tabs button.active {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: white;
+            font-weight: 900;
+        }
+
         .toast-container {
             position: fixed;
             top: 18px;
@@ -575,6 +657,7 @@
         </div>
         <div class="dashboard-actions">
             <button class="btn-generate" type="button" onclick="startNewTournament()">建立新賽程</button>
+            <button id="admin-dashboard-btn" class="btn-secondary hidden" type="button" onclick="showAdminView()">管理後台</button>
             <button class="btn-secondary" type="button" onclick="refreshDashboard()">重新整理</button>
             <button class="btn-secondary" type="button" onclick="logoutUser()">登出</button>
         </div>
@@ -605,6 +688,51 @@
             <div id="dashboard-message" class="message"></div>
         </section>
     </div>
+</div>
+
+
+<div id="admin-app" class="admin-page hidden">
+    <div class="top-user-bar">
+        <div>
+            <div class="user-pill" id="admin-user-pill">管理後台</div>
+            <div class="small-note">Users / Tournaments / Logs / Stats</div>
+        </div>
+        <div class="dashboard-actions">
+            <button class="btn-secondary" type="button" onclick="showDashboardView()">回 Profile</button>
+            <button class="btn-secondary" type="button" onclick="loadAdminDashboard()">重新整理後台</button>
+            <button class="btn-secondary" type="button" onclick="logoutUser()">登出</button>
+        </div>
+    </div>
+
+    <section class="admin-section">
+        <h2 class="dashboard-title">管理總覽</h2>
+        <div class="auth-subtitle">只有 admin / super_admin 可以進入。升級與降級管理員只有 super_admin 可以操作。</div>
+        <div id="admin-stats-grid" class="admin-grid"></div>
+        <div id="admin-message" class="message"></div>
+    </section>
+
+    <section class="admin-section">
+        <div class="admin-tabs">
+            <button id="admin-users-tab" class="active" type="button" onclick="setAdminTab('users')">使用者</button>
+            <button id="admin-tournaments-tab" type="button" onclick="setAdminTab('tournaments')">所有賽程</button>
+            <button id="admin-logs-tab" type="button" onclick="setAdminTab('logs')">管理紀錄</button>
+        </div>
+
+        <div id="admin-users-panel">
+            <h3>所有使用者</h3>
+            <div id="admin-users-list" class="admin-table-wrapper"></div>
+        </div>
+
+        <div id="admin-tournaments-panel" class="hidden">
+            <h3>所有賽程</h3>
+            <div id="admin-tournaments-list" class="admin-table-wrapper"></div>
+        </div>
+
+        <div id="admin-logs-panel" class="hidden">
+            <h3>管理紀錄</h3>
+            <div id="admin-logs-list" class="admin-table-wrapper"></div>
+        </div>
+    </section>
 </div>
 
 <div id="tournament-app" class="hidden">
@@ -686,7 +814,11 @@
     let matchOrder = [];
     let columns = { winners: [], losers: [] };
 
-    const API_BASE_URL = 'https://tournament-manager-6944330ef027.herokuapp.com';
+    const API_BASE_URL = (() => {
+        const envBaseUrl = '%VITE_API_BASE_URL%';
+        if (envBaseUrl && !envBaseUrl.startsWith('%VITE_')) return envBaseUrl;
+        return 'http://127.0.0.1:8000';
+    })();
     let authToken = localStorage.getItem('tm_access_token') || null;
     let currentUser = null;
     let currentTournamentId = null;
@@ -828,12 +960,14 @@
     function showAuthView() {
         document.getElementById('auth-app').classList.remove('hidden');
         document.getElementById('dashboard-app').classList.add('hidden');
+        document.getElementById('admin-app').classList.add('hidden');
         document.getElementById('tournament-app').classList.add('hidden');
     }
 
     async function showDashboardView() {
         document.getElementById('auth-app').classList.add('hidden');
         document.getElementById('dashboard-app').classList.remove('hidden');
+        document.getElementById('admin-app').classList.add('hidden');
         document.getElementById('tournament-app').classList.add('hidden');
         updateUserLabels();
         await loadSavedTournaments();
@@ -842,6 +976,7 @@
     function showTournamentView() {
         document.getElementById('auth-app').classList.add('hidden');
         document.getElementById('dashboard-app').classList.add('hidden');
+        document.getElementById('admin-app').classList.add('hidden');
         document.getElementById('tournament-app').classList.remove('hidden');
         updateUserLabels();
         setSaveStatus('', currentTournamentId ? `已載入賽程 #${currentTournamentId}` : '新賽程尚未儲存');
@@ -852,16 +987,330 @@
     }
 
     function updateUserLabels() {
-        const label = currentUser ? `${currentUser.username} (${currentUser.email})` : '尚未登入';
+        const roleText = currentUser?.role ? `｜${currentUser.role}` : '';
+        const label = currentUser ? `${currentUser.username} (${currentUser.email})${roleText}` : '尚未登入';
         const dash = document.getElementById('dashboard-user-pill');
         const editor = document.getElementById('editor-user-pill');
+        const admin = document.getElementById('admin-user-pill');
         const summary = document.getElementById('profile-summary');
+        const adminButton = document.getElementById('admin-dashboard-btn');
         if (dash) dash.innerText = label;
         if (editor) editor.innerText = currentUser ? `賽程編輯器｜${label}` : '賽程編輯器';
+        if (admin) admin.innerText = currentUser ? `管理後台｜${label}` : '管理後台';
+        if (adminButton) adminButton.classList.toggle('hidden', !canAccessAdmin());
         if (summary && currentUser) summary.innerText = `Username: ${currentUser.username}
 Email: ${currentUser.email}
-User ID: ${currentUser.id}`;
+User ID: ${currentUser.id}
+Role: ${currentUser.role || 'member'}`;
     }
+
+    function canAccessAdmin() {
+        return currentUser && ['admin', 'super_admin'].includes(currentUser.role);
+    }
+
+    function isSuperAdmin() {
+        return currentUser && currentUser.role === 'super_admin';
+    }
+
+
+    async function showAdminView() {
+        if (!canAccessAdmin()) {
+            showToast('你沒有管理後台權限。', 'error');
+            return;
+        }
+        document.getElementById('auth-app').classList.add('hidden');
+        document.getElementById('dashboard-app').classList.add('hidden');
+        document.getElementById('tournament-app').classList.add('hidden');
+        document.getElementById('admin-app').classList.remove('hidden');
+        updateUserLabels();
+        await loadAdminDashboard();
+    }
+
+    function setAdminTab(tab) {
+        ['users', 'tournaments', 'logs'].forEach((name) => {
+            document.getElementById(`admin-${name}-tab`).classList.toggle('active', name === tab);
+            document.getElementById(`admin-${name}-panel`).classList.toggle('hidden', name !== tab);
+        });
+    }
+
+    async function loadAdminDashboard() {
+        if (!canAccessAdmin()) return;
+        setMessage('admin-message', '讀取管理資料中...');
+        try {
+            const [stats, users, tournaments, logs] = await Promise.all([
+                apiFetch('/admin/stats'),
+                apiFetch('/admin/users'),
+                apiFetch('/admin/tournaments'),
+                apiFetch('/admin/logs'),
+            ]);
+            renderAdminStats(stats);
+            renderAdminUsers(users);
+            renderAdminTournaments(tournaments);
+            renderAdminLogs(logs);
+            setMessage('admin-message', '');
+        } catch (error) {
+            setMessage('admin-message', error.message, 'error');
+        }
+    }
+
+    function renderAdminStats(stats) {
+        const grid = document.getElementById('admin-stats-grid');
+        if (!grid) return;
+        const cards = [
+            ['Total Users', stats.total_users],
+            ['Members', stats.total_members],
+            ['Admins', stats.total_admins],
+            ['Super Admins', stats.total_super_admins],
+            ['Total Tournaments', stats.total_tournaments],
+        ];
+        grid.innerHTML = cards.map(([label, value]) => `
+            <div class="admin-stat-card">
+                <div class="admin-stat-label">${label}</div>
+                <div class="admin-stat-value">${value ?? 0}</div>
+            </div>
+        `).join('');
+    }
+
+    function roleBadge(role) {
+        const safeRole = escapeHtml(role || 'member');
+        return `<span class="role-badge ${safeRole}">${safeRole}</span>`;
+    }
+
+    function canManageUserByRole(user) {
+        if (!currentUser) return false;
+        if (currentUser.role === 'admin') return user.role === 'member';
+        if (currentUser.role === 'super_admin') return user.role !== 'super_admin';
+        return false;
+    }
+
+    function canDisableUser(user) {
+        if (!canManageUserByRole(user)) return false;
+        if (currentUser?.role === 'super_admin' && currentUser?.id === user.id) return false;
+        return !!user.is_active;
+    }
+
+    function canEnableUser(user) {
+        if (!canManageUserByRole(user)) return false;
+        if (currentUser?.role === 'super_admin' && currentUser?.id === user.id) return false;
+        return !user.is_active;
+    }
+
+    function canDeleteUser(user) {
+        if (!canManageUserByRole(user)) return false;
+        if (currentUser?.role === 'super_admin' && currentUser?.id === user.id) return false;
+        return true;
+    }
+
+    function canResetUserPassword(user) {
+        if (!canManageUserByRole(user)) return false;
+        if (currentUser?.role === 'super_admin' && currentUser?.id === user.id) return false;
+        return true;
+    }
+
+    function renderAdminUsers(users) {
+        const container = document.getElementById('admin-users-list');
+        if (!container) return;
+        if (!users.length) {
+            container.innerHTML = '<div class="small-note">目前沒有使用者。</div>';
+            return;
+        }
+        container.innerHTML = `
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>ID</th><th>Email</th><th>Username</th><th>Role</th><th>Active</th><th>Created</th><th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${users.map((user) => {
+                        const canPromote = isSuperAdmin() && user.role === 'member';
+                        const canDemote = isSuperAdmin() && user.role === 'admin';
+                        const canDisable = canDisableUser(user);
+                        const canEnable = canEnableUser(user);
+                        const canDelete = canDeleteUser(user);
+                        const canResetPassword = canResetUserPassword(user);
+                        const hasActions = canPromote || canDemote || canDisable || canEnable || canDelete || canResetPassword;
+                        return `
+                            <tr>
+                                <td>${user.id}</td>
+                                <td>${escapeHtml(user.email)}</td>
+                                <td>${escapeHtml(user.username)}</td>
+                                <td>${roleBadge(user.role)}</td>
+                                <td>${user.is_active ? '是' : '否'}</td>
+                                <td>${formatDateTimeForDisplay(user.created_at)}</td>
+                                <td>
+                                    ${canPromote ? `<button class="btn-success" type="button" onclick="promoteAdminUser(${user.id})">升為管理員</button>` : ''}
+                                    ${canDemote ? `<button class="btn-danger" type="button" onclick="demoteAdminUser(${user.id})">解除管理員</button>` : ''}
+                                    ${canDisable ? `<button class="btn-danger" type="button" onclick="disableAdminUser(${user.id})">Disable</button>` : ''}
+                                    ${canEnable ? `<button class="btn-success" type="button" onclick="enableAdminUser(${user.id})">Enable</button>` : ''}
+                                    ${canResetPassword ? `<button class="btn-secondary" type="button" onclick="resetAdminUserPassword(${user.id})">Reset Password</button>` : ''}
+                                    ${canDelete ? `<button class="btn-danger" type="button" onclick="deleteAdminUser(${user.id})">Delete</button>` : ''}
+                                    ${!hasActions ? '<span class="small-note">—</span>' : ''}
+                                </td>
+                            </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>`;
+    }
+
+    function renderAdminTournaments(tournaments) {
+        const container = document.getElementById('admin-tournaments-list');
+        if (!container) return;
+        if (!tournaments.length) {
+            container.innerHTML = '<div class="small-note">目前沒有賽程。</div>';
+            return;
+        }
+        container.innerHTML = `
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>ID</th><th>User ID</th><th>Title</th><th>Status</th><th>Teams</th><th>Mode</th><th>Updated</th><th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tournaments.map((item) => `
+                        <tr>
+                            <td>${item.id}</td>
+                            <td>${item.user_id}</td>
+                            <td>${escapeHtml(item.title)}</td>
+                            <td>${item.champion ? `已完成：${escapeHtml(item.champion)}` : '進行中'}</td>
+                            <td>${item.team_count || '—'}</td>
+                            <td>${item.max_losses === 2 ? '雙敗' : '單敗'}</td>
+                            <td>${formatDateTimeForDisplay(item.updated_at)}</td>
+                            <td><button class="btn-danger" type="button" onclick="deleteAdminTournament(${item.id})">Delete</button></td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>`;
+    }
+
+    function getAdminActionLabel(action) {
+        const mapping = {
+            promote_to_admin: 'Promoted User to Admin',
+            demote_to_member: 'Demoted Admin to Member',
+            disable_user: 'Disabled User',
+            enable_user: 'Enabled User',
+            delete_user: 'Deleted User',
+            delete_tournament: 'Deleted Tournament',
+            reset_user_password: 'Reset User Password',
+        };
+        return mapping[action] || action || '—';
+    }
+
+    function renderAdminLogs(logs) {
+        const container = document.getElementById('admin-logs-list');
+        if (!container) return;
+        if (!logs.length) {
+            container.innerHTML = '<div class="small-note">目前沒有管理紀錄。</div>';
+            return;
+        }
+        container.innerHTML = `
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>ID</th><th>Actor</th><th>Action</th><th>Target</th><th>Details</th><th>Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${logs.map((log) => `
+                        <tr>
+                            <td>${log.id}</td>
+                            <td>${log.actor_user_id ?? '—'}</td>
+                            <td>${escapeHtml(getAdminActionLabel(log.action))}</td>
+                            <td>${escapeHtml(log.target_type || '—')} #${log.target_id ?? '—'}</td>
+                            <td><code>${escapeHtml(JSON.stringify(log.details || {}))}</code></td>
+                            <td>${formatDateTimeForDisplay(log.created_at)}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>`;
+    }
+
+    async function promoteAdminUser(userId) {
+        if (!confirm(`確定要把 User #${userId} 升為管理員？`)) return;
+        try {
+            await apiFetch(`/admin/users/${userId}/promote`, { method: 'PUT' });
+            showToast('已升為管理員。', 'success');
+            await loadAdminDashboard();
+        } catch (error) {
+            showToast(`操作失敗：${error.message}`, 'error', 4200);
+        }
+    }
+
+    async function demoteAdminUser(userId) {
+        if (!confirm(`確定要解除 User #${userId} 的管理員權限？`)) return;
+        try {
+            await apiFetch(`/admin/users/${userId}/demote`, { method: 'PUT' });
+            showToast('已解除管理員權限。', 'success');
+            await loadAdminDashboard();
+        } catch (error) {
+            showToast(`操作失敗：${error.message}`, 'error', 4200);
+        }
+    }
+
+    async function disableAdminUser(userId) {
+        if (!confirm(`確定要停權 User #${userId}？`)) return;
+        try {
+            await apiFetch(`/admin/users/${userId}/disable`, { method: 'PUT' });
+            showToast('使用者已停權。', 'success');
+            await loadAdminDashboard();
+        } catch (error) {
+            showToast(`操作失敗：${error.message}`, 'error', 4200);
+        }
+    }
+
+    async function enableAdminUser(userId) {
+        if (!confirm(`確定要啟用 User #${userId}？`)) return;
+        try {
+            await apiFetch(`/admin/users/${userId}/enable`, { method: 'PUT' });
+            showToast('使用者已啟用。', 'success');
+            await loadAdminDashboard();
+        } catch (error) {
+            showToast(`操作失敗：${error.message}`, 'error', 4200);
+        }
+    }
+
+    async function resetAdminUserPassword(userId) {
+        const newPassword = prompt(`請輸入 User #${userId} 的新密碼（至少 8 碼）`);
+        if (newPassword === null) return;
+        if (newPassword.length < 8) {
+            showToast('密碼長度至少 8 碼。', 'error', 3600);
+            return;
+        }
+        try {
+            await apiFetch(`/admin/users/${userId}/reset-password`, {
+                method: 'PUT',
+                body: JSON.stringify({ new_password: newPassword }),
+            });
+            showToast('密碼已重設。', 'success');
+            await loadAdminDashboard();
+        } catch (error) {
+            showToast(`操作失敗：${error.message}`, 'error', 4200);
+        }
+    }
+
+    async function deleteAdminUser(userId) {
+        if (!confirm(`確定要刪除 User #${userId}？此操作無法復原。`)) return;
+        try {
+            await apiFetch(`/admin/users/${userId}`, { method: 'DELETE' });
+            showToast('使用者已刪除。', 'success');
+            await loadAdminDashboard();
+        } catch (error) {
+            showToast(`操作失敗：${error.message}`, 'error', 4200);
+        }
+    }
+
+    async function deleteAdminTournament(tournamentId) {
+        if (!confirm(`確定要刪除 Tournament #${tournamentId}？此操作無法復原。`)) return;
+        try {
+            await apiFetch(`/admin/tournaments/${tournamentId}`, { method: 'DELETE' });
+            showToast('賽程已刪除。', 'success');
+            await loadAdminDashboard();
+        } catch (error) {
+            showToast(`操作失敗：${error.message}`, 'error', 4200);
+        }
+    }
+
 
     async function registerUser(event) {
         event.preventDefault();
