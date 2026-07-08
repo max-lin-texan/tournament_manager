@@ -814,10 +814,13 @@
     let matchOrder = [];
     let columns = { winners: [], losers: [] };
 
+    // Local frontend uses local API; Netlify/production uses Heroku API.
     const API_BASE_URL = (() => {
-        const envBaseUrl = '%VITE_API_BASE_URL%';
-        if (envBaseUrl && !envBaseUrl.startsWith('%VITE_')) return envBaseUrl;
-        return 'http://127.0.0.1:8000';
+        const host = window.location.hostname;
+        if (host === 'localhost' || host === '127.0.0.1') {
+            return 'http://127.0.0.1:8000';
+        }
+        return 'https://tournament-manager-6944330ef027.herokuapp.com';
     })();
     let authToken = localStorage.getItem('tm_access_token') || null;
     let currentUser = null;
