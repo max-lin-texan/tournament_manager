@@ -12,6 +12,7 @@ from schemas import (
     AdminLogOut,
     AdminPasswordResetRequest,
     AdminStatsOut,
+    AdminTournamentDetailOut,
     AdminTournamentOut,
     AdminUserOut,
     ChangePasswordRequest,
@@ -139,6 +140,35 @@ def ensure_user_management_permission(
     raise HTTPException(status_code=403, detail="Admin only")
 
 
+def build_admin_tournament_out(tournament: Tournament, owner: User | None) -> AdminTournamentOut:
+    return AdminTournamentOut(
+        id=tournament.id,
+        user_id=tournament.user_id,
+        owner_username=owner.username if owner else None,
+        owner_role=owner.role if owner else None,
+        title=tournament.title,
+        champion=tournament.champion,
+        team_count=tournament.team_count,
+        max_losses=tournament.max_losses,
+        has_grand_final_reset=tournament.has_grand_final_reset,
+        completed_at=tournament.completed_at,
+        created_at=tournament.created_at,
+        updated_at=tournament.updated_at,
+    )
+
+
+def build_admin_tournament_detail(tournament: Tournament, owner: User | None) -> AdminTournamentDetailOut:
+    base = build_admin_tournament_out(tournament, owner)
+    return AdminTournamentDetailOut(**base.model_dump(), state=tournament.state or {})
+
+
+def build_username_map(db: Session, user_ids: set[int]) -> dict[int, str]:
+    if not user_ids:
+        return {}
+    users = db.scalars(select(User).where(User.id.in_(user_ids))).all()
+    return {user.id: user.username for user in users}
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok", "database": "postgresql", "auth": "enabled"}
@@ -149,7 +179,7 @@ def admin_list_users(
     admin_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return db.scalars(select(User).order_by(User.created_at.desc())).all()
+    return db.scalars(select(User).order_by(User.id.asc())).all()
 
 
 @app.get("/admin/tournaments", response_model=list[AdminTournamentOut])
@@ -157,7 +187,27 @@ def admin_list_tournaments(
     admin_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return db.scalars(select(Tournament).order_by(Tournament.updated_at.desc())).all()
+    tournaments = db.scalars(select(Tournament).order_by(Tournament.id.asc())).all()
+    owners = {
+        user.id: user
+        for user in db.scalars(
+            select(User).where(User.id.in_({item.user_id for item in tournaments}))
+        ).all()
+    } if tournaments else {}
+    return [build_admin_tournament_out(item, owners.get(item.user_id)) for item in tournaments]
+
+
+@app.get("/admin/tournaments/{tournament_id}", response_model=AdminTournamentDetailOut)
+def admin_get_tournament(
+    tournament_id: int,
+    admin_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    tournament = db.get(Tournament, tournament_id)
+    if tournament is None:
+        raise HTTPException(status_code=404, detail="Tournament not found")
+    owner = db.get(User, tournament.user_id)
+    return build_admin_tournament_detail(tournament, owner)
 
 
 @app.get("/admin/logs", response_model=list[AdminLogOut])
@@ -165,9 +215,32 @@ def admin_list_logs(
     admin_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return db.scalars(
-        select(AdminLog).order_by(AdminLog.created_at.desc()).limit(200)
-    ).all()
+    logs = db.scalars(select(AdminLog).order_by(AdminLog.id.asc()).limit(200)).all()
+    related_ids: set[int] = set()
+    for log in logs:
+        if log.actor_user_id is not None:
+            related_ids.add(log.actor_user_id)
+        if log.target_type == "user" and log.target_id is not None:
+            related_ids.add(log.target_id)
+    username_map = build_username_map(db, related_ids)
+    return [
+        AdminLogOut(
+            id=log.id,
+            actor_user_id=log.actor_user_id,
+            actor_username=username_map.get(log.actor_user_id) if log.actor_user_id else None,
+            action=log.action,
+            target_type=log.target_type,
+            target_id=log.target_id,
+            target_username=(
+                username_map.get(log.target_id)
+                if log.target_type == "user" and log.target_id is not None
+                else None
+            ),
+            details=log.details or {},
+            created_at=log.created_at,
+        )
+        for log in logs
+    ]
 
 
 @app.get("/admin/stats", response_model=AdminStatsOut)
@@ -380,6 +453,16 @@ def admin_delete_tournament(
     if tournament is None:
         raise HTTPException(status_code=404, detail="Tournament not found")
 
+    owner = db.get(User, tournament.user_id)
+    # Regular admins can only delete tournaments owned by members.
+    if admin_user.role == "admin":
+        owner_role = owner.role if owner else "member"
+        if owner_role in ADMIN_ROLES:
+            raise HTTPException(
+                status_code=403,
+                detail="Admin cannot delete tournaments created by admin or super_admin",
+            )
+
     write_admin_log(
         db=db,
         actor_user=admin_user,
@@ -389,6 +472,7 @@ def admin_delete_tournament(
         details={
             "title": tournament.title,
             "owner_user_id": tournament.user_id,
+            "owner_username": owner.username if owner else None,
             "champion": tournament.champion,
         },
     )

@@ -151,6 +151,8 @@ class AdminUserOut(BaseModel):
 class AdminTournamentOut(BaseModel):
     id: int
     user_id: int
+    owner_username: str | None = None
+    owner_role: str | None = None
     title: str
     champion: str | None
     team_count: int | None
@@ -163,12 +165,18 @@ class AdminTournamentOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AdminTournamentDetailOut(AdminTournamentOut):
+    state: dict[str, Any]
+
+
 class AdminLogOut(BaseModel):
     id: int
     actor_user_id: int | None
+    actor_username: str | None = None
     action: str
     target_type: str | None
     target_id: int | None
+    target_username: str | None = None
     details: dict[str, Any]
     created_at: datetime
 
