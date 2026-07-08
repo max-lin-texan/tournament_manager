@@ -580,6 +580,31 @@
             color: white;
             font-weight: 900;
         }
+        .admin-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            margin: 0 0 12px;
+        }
+        .admin-toolbar input[type="search"],
+        .admin-toolbar select {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--soft-border);
+            color: #e5e7eb;
+            border-radius: 10px;
+            padding: 8px 10px;
+            min-width: 180px;
+        }
+        .admin-toolbar input[type="search"] {
+            flex: 1 1 220px;
+            min-width: 200px;
+        }
+        .admin-toolbar .toolbar-label {
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
 
         .toast-container {
             position: fixed;
@@ -720,16 +745,35 @@
 
         <div id="admin-users-panel">
             <h3>所有使用者</h3>
+            <div class="admin-toolbar">
+                <input id="admin-users-search" type="search" placeholder="搜尋 username / ID / email" oninput="onAdminUsersFilterChange()">
+            </div>
             <div id="admin-users-list" class="admin-table-wrapper"></div>
         </div>
 
         <div id="admin-tournaments-panel" class="hidden">
             <h3>所有賽程</h3>
+            <div class="admin-toolbar">
+                <input id="admin-tournaments-search" type="search" placeholder="搜尋 title / owner username / owner ID / email" oninput="onAdminTournamentsFilterChange()">
+                <span class="toolbar-label">排序</span>
+                <select id="admin-tournaments-sort" onchange="onAdminTournamentsFilterChange()">
+                    <option value="active" selected>活躍感（最近更新越前）</option>
+                    <option value="catalog">目錄感（ID 小到大）</option>
+                </select>
+            </div>
             <div id="admin-tournaments-list" class="admin-table-wrapper"></div>
         </div>
 
         <div id="admin-logs-panel" class="hidden">
             <h3>管理紀錄</h3>
+            <div class="admin-toolbar">
+                <input id="admin-logs-search" type="search" placeholder="搜尋 username / ID / email / action" oninput="onAdminLogsFilterChange()">
+                <span class="toolbar-label">排序</span>
+                <select id="admin-logs-sort" onchange="onAdminLogsFilterChange()">
+                    <option value="newest" selected>越新越前</option>
+                    <option value="oldest">越舊越前</option>
+                </select>
+            </div>
             <div id="admin-logs-list" class="admin-table-wrapper"></div>
         </div>
     </section>
@@ -827,6 +871,14 @@
     let currentTournamentId = null;
     let adminReadOnlyMode = false;
     let adminUsersById = {};
+    let adminUsersCache = [];
+    let adminTournamentsCache = [];
+    let adminLogsCache = [];
+    let adminUsersQuery = '';
+    let adminTournamentsQuery = '';
+    let adminLogsQuery = '';
+    let adminTournamentsSort = 'active';
+    let adminLogsSort = 'newest';
 
     window.onload = async function() {
         setupTournamentControls();
@@ -1090,10 +1142,13 @@ Role: ${currentUser.role || 'member'}`;
                 apiFetch('/admin/logs'),
             ]);
             renderAdminStats(stats);
-            adminUsersById = Object.fromEntries((users || []).map((user) => [user.id, user]));
-            renderAdminUsers(users);
-            renderAdminTournaments(tournaments);
-            renderAdminLogs(logs);
+            adminUsersCache = users || [];
+            adminTournamentsCache = tournaments || [];
+            adminLogsCache = logs || [];
+            adminUsersById = Object.fromEntries(adminUsersCache.map((user) => [user.id, user]));
+            refreshAdminUsersView();
+            refreshAdminTournamentsView();
+            refreshAdminLogsView();
             setMessage('admin-message', '');
         } catch (error) {
             setMessage('admin-message', error.message, 'error');
@@ -1167,11 +1222,118 @@ Role: ${currentUser.role || 'member'}`;
         return username ? `${userId}｜${username}` : String(userId);
     }
 
+    function normalizeAdminQuery(value) {
+        return String(value || '').trim().toLowerCase();
+    }
+
+    function onAdminUsersFilterChange() {
+        adminUsersQuery = document.getElementById('admin-users-search')?.value || '';
+        refreshAdminUsersView();
+    }
+
+    function onAdminTournamentsFilterChange() {
+        adminTournamentsQuery = document.getElementById('admin-tournaments-search')?.value || '';
+        adminTournamentsSort = document.getElementById('admin-tournaments-sort')?.value || 'active';
+        refreshAdminTournamentsView();
+    }
+
+    function onAdminLogsFilterChange() {
+        adminLogsQuery = document.getElementById('admin-logs-search')?.value || '';
+        adminLogsSort = document.getElementById('admin-logs-sort')?.value || 'newest';
+        refreshAdminLogsView();
+    }
+
+    function getFilteredAdminUsers() {
+        const q = normalizeAdminQuery(adminUsersQuery);
+        if (!q) return [...adminUsersCache];
+        return adminUsersCache.filter((user) => {
+            const haystack = [
+                String(user.id),
+                user.username || '',
+                user.email || '',
+                user.role || '',
+            ].join(' ').toLowerCase();
+            return haystack.includes(q);
+        });
+    }
+
+    function getFilteredSortedAdminTournaments() {
+        const q = normalizeAdminQuery(adminTournamentsQuery);
+        let list = adminTournamentsCache.filter((item) => {
+            if (!q) return true;
+            const owner = adminUsersById[item.user_id];
+            const haystack = [
+                String(item.id),
+                item.title || '',
+                String(item.user_id ?? ''),
+                item.owner_username || owner?.username || '',
+                owner?.email || '',
+                item.champion || '',
+            ].join(' ').toLowerCase();
+            return haystack.includes(q);
+        });
+        list = [...list];
+        if (adminTournamentsSort === 'catalog') {
+            list.sort((a, b) => a.id - b.id);
+        } else {
+            list.sort((a, b) => {
+                const ta = new Date(a.updated_at || a.created_at || 0).getTime();
+                const tb = new Date(b.updated_at || b.created_at || 0).getTime();
+                if (tb !== ta) return tb - ta;
+                return b.id - a.id;
+            });
+        }
+        return list;
+    }
+
+    function getFilteredSortedAdminLogs() {
+        const q = normalizeAdminQuery(adminLogsQuery);
+        let list = adminLogsCache.filter((log) => {
+            if (!q) return true;
+            const actor = adminUsersById[log.actor_user_id];
+            const target = log.target_type === 'user' ? adminUsersById[log.target_id] : null;
+            const actionLabel = getAdminActionLabel(log.action);
+            const haystack = [
+                String(log.id),
+                String(log.actor_user_id ?? ''),
+                log.actor_username || actor?.username || '',
+                actor?.email || '',
+                log.action || '',
+                actionLabel || '',
+                log.target_type || '',
+                String(log.target_id ?? ''),
+                log.target_username || target?.username || '',
+                target?.email || '',
+                JSON.stringify(log.details || {}),
+            ].join(' ').toLowerCase();
+            return haystack.includes(q);
+        });
+        list = [...list];
+        if (adminLogsSort === 'oldest') {
+            list.sort((a, b) => a.id - b.id);
+        } else {
+            list.sort((a, b) => b.id - a.id);
+        }
+        return list;
+    }
+
+    function refreshAdminUsersView() {
+        renderAdminUsers(getFilteredAdminUsers());
+    }
+
+    function refreshAdminTournamentsView() {
+        renderAdminTournaments(getFilteredSortedAdminTournaments());
+    }
+
+    function refreshAdminLogsView() {
+        renderAdminLogs(getFilteredSortedAdminLogs());
+    }
+
     function renderAdminUsers(users) {
         const container = document.getElementById('admin-users-list');
         if (!container) return;
         if (!users.length) {
-            container.innerHTML = '<div class="small-note">目前沒有使用者。</div>';
+            container.innerHTML = `<div class="small-note">${adminUsersQuery ? '沒有符合搜尋條件的使用者。' : '目前沒有使用者。'}</div>`;
             return;
         }
         container.innerHTML = `
@@ -1217,7 +1379,7 @@ Role: ${currentUser.role || 'member'}`;
         const container = document.getElementById('admin-tournaments-list');
         if (!container) return;
         if (!tournaments.length) {
-            container.innerHTML = '<div class="small-note">目前沒有賽程。</div>';
+            container.innerHTML = `<div class="small-note">${adminTournamentsQuery ? '沒有符合搜尋條件的賽程。' : '目前沒有賽程。'}</div>`;
             return;
         }
         container.innerHTML = `
@@ -1270,7 +1432,7 @@ Role: ${currentUser.role || 'member'}`;
         const container = document.getElementById('admin-logs-list');
         if (!container) return;
         if (!logs.length) {
-            container.innerHTML = '<div class="small-note">目前沒有管理紀錄。</div>';
+            container.innerHTML = `<div class="small-note">${adminLogsQuery ? '沒有符合搜尋條件的管理紀錄。' : '目前沒有管理紀錄。'}</div>`;
             return;
         }
         container.innerHTML = `
@@ -1444,6 +1606,14 @@ Role: ${currentUser.role || 'member'}`;
         currentTournamentId = null;
         adminReadOnlyMode = false;
         adminUsersById = {};
+        adminUsersCache = [];
+        adminTournamentsCache = [];
+        adminLogsCache = [];
+        adminUsersQuery = '';
+        adminTournamentsQuery = '';
+        adminLogsQuery = '';
+        adminTournamentsSort = 'active';
+        adminLogsSort = 'newest';
         localStorage.removeItem('tm_access_token');
         clearAuthForms();
         setAuthMode('login');
