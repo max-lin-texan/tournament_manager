@@ -958,7 +958,7 @@
                 <div class="group-step-grid">
                     <label>
                         小組總隊伍數（跟隨上方總隊伍數）
-                        <input id="group-total-teams-input" type="number" min="4" max="128" value="8" disabled>
+                        <input id="group-total-teams-input" type="number" min="4" max="128" value="8" disabled readonly tabindex="-1" aria-readonly="true">
                     </label>
                     <label>
                         小組數（2-42）
@@ -1109,9 +1109,8 @@
         if (!hasEstablishedGroupStage()) return;
         groupEditModeUnlocked = false;
         const teamsSelect = document.getElementById('teams-select');
-        const groupTotalInput = document.getElementById('group-total-teams-input');
         if (teamsSelect) teamsSelect.value = String(getTotalTeamCount());
-        if (groupTotalInput) groupTotalInput.value = String(getTotalTeamCount());
+        syncGroupTotalTeamsDisplay();
         restoreGroupWizardInputsFromState();
         showToast('已取消編輯，維持原有賽程設定。', 'info', 1400);
     }
@@ -1301,7 +1300,7 @@
 
         const totalTeams = getSelectedGroupTotalTeams();
         const groupCount = clampInt(groupCountInput.value, 2, 42, 2);
-        totalTeamsInput.value = String(totalTeams);
+        syncGroupTotalTeamsDisplay();
         groupCountInput.value = String(groupCount);
         if (totalTeams < groupCount * 2) {
             step2.classList.add('hidden');
@@ -1877,12 +1876,23 @@
         }
     }
 
+    function syncGroupTotalTeamsDisplay() {
+        const totalTeamsInput = document.getElementById('group-total-teams-input');
+        if (!totalTeamsInput) return;
+        totalTeamsInput.value = String(getSelectedGroupTotalTeams());
+        totalTeamsInput.disabled = true;
+        totalTeamsInput.readOnly = true;
+        totalTeamsInput.tabIndex = -1;
+    }
+
     function setGroupWizardInputsDisabled(disabled) {
         const groupPanel = document.getElementById('group-config-panel');
         if (!groupPanel) return;
         groupPanel.querySelectorAll('input, select, button').forEach((node) => {
+            if (node.id === 'group-total-teams-input') return;
             node.disabled = disabled;
         });
+        syncGroupTotalTeamsDisplay();
     }
 
     function updateUserLabels() {
@@ -2691,10 +2701,9 @@ ${data.reset_token}`, 'success');
         if (lossSelect) lossSelect.value = String(maxLosses);
         if (resetSelect) resetSelect.value = String(hasGrandFinalReset);
         if (formatSelect) formatSelect.value = tournamentFormat;
-        const groupTotalInput = document.getElementById('group-total-teams-input');
         const groupCountInput = document.getElementById('group-count-input');
         const groupCycleSelect = document.getElementById('group-cycle-select');
-        if (groupTotalInput) groupTotalInput.value = String(getSelectedGroupTotalTeams());
+        syncGroupTotalTeamsDisplay();
         if (groupCountInput) groupCountInput.value = String(groupStageData.groupCount || 2);
         if (groupCycleSelect) groupCycleSelect.value = String(groupStageData.cycles || 1);
         refreshGroupWizardUI();
@@ -2985,7 +2994,7 @@ ${data.reset_token}`, 'success');
             groupEditModeUnlocked = true;
         }
         normalizeTeamCountForCurrentFormat();
-        document.getElementById('group-total-teams-input').value = String(getSelectedGroupTotalTeams());
+        syncGroupTotalTeamsDisplay();
         refreshGroupWizardUI();
         populateTeamSelectOptions();
         refreshSettingsOptionAvailability();
@@ -3073,7 +3082,7 @@ ${data.reset_token}`, 'success');
         document.getElementById('loss-select').value = String(lastAppliedTopSettings.maxLosses);
         document.getElementById('reset-select').value = String(lastAppliedTopSettings.hasGrandFinalReset);
         document.getElementById('format-select').value = lastAppliedTopSettings.format;
-        document.getElementById('group-total-teams-input').value = String(getSelectedGroupTotalTeams());
+        syncGroupTotalTeamsDisplay();
         document.getElementById('group-count-input').value = String(groupStageData.groupCount || 2);
         document.getElementById('group-cycle-select').value = String(groupStageData.cycles || 1);
         refreshGroupWizardUI();
