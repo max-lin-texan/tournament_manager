@@ -974,8 +974,8 @@
                         <span id="group-total-teams-display" class="group-readonly-value" aria-live="polite">8 隊</span>
                     </label>
                     <label>
-                        小組數（2-42）
-                        <input id="group-count-input" type="number" min="2" max="42" value="2">
+                        小組數（1-42）
+                        <input id="group-count-input" type="number" min="1" max="42" value="2">
                     </label>
                     <label>
                         每組循環次數
@@ -1164,7 +1164,7 @@
     function confirmGroupStep1() {
         if (adminReadOnlyMode) return;
         const totalTeams = getSelectedGroupTotalTeams();
-        const groupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 2, 42, 2);
+        const groupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 1, 42, 2);
         const nextCycles = clampInt(document.getElementById('group-cycle-select')?.value || '1', 1, 2, 1);
         if (totalTeams < groupCount * 2) {
             alert('每組至少要有 2 隊，請調整總隊伍數或小組數。');
@@ -1202,7 +1202,7 @@
     function confirmGroupStep2() {
         if (adminReadOnlyMode) return;
         const totalTeams = getSelectedGroupTotalTeams();
-        const groupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 2, 42, 2);
+        const groupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 1, 42, 2);
         const distribution = collectGroupDistribution(totalTeams, groupCount);
         if (!distribution.ok) {
             alert(distribution.error || '小組分配設定不完整。');
@@ -1241,7 +1241,7 @@
     function confirmGroupStep3() {
         if (adminReadOnlyMode) return;
         const totalTeams = getSelectedGroupTotalTeams();
-        const groupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 2, 42, 2);
+        const groupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 1, 42, 2);
         const distribution = collectGroupDistribution(totalTeams, groupCount);
         if (!distribution.ok) {
             alert(distribution.error || 'Step 2 設定不完整。');
@@ -1311,7 +1311,7 @@
         const isGroupOnly = selectedFormat === 'group_only';
 
         const totalTeams = getSelectedGroupTotalTeams();
-        const groupCount = clampInt(groupCountInput.value, 2, 42, 2);
+        const groupCount = clampInt(groupCountInput.value, 1, 42, 2);
         syncGroupTotalTeamsDisplay();
         groupCountInput.value = String(groupCount);
         if (totalTeams < groupCount * 2) {
@@ -1439,7 +1439,7 @@
         const selectedFormat = getSelectedTournamentFormat();
         if (selectedFormat !== 'group_knockout') return null;
         const totalTeams = getSelectedGroupTotalTeams();
-        const groupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 2, 42, 2);
+        const groupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 1, 42, 2);
         const distribution = collectGroupDistribution(totalTeams, groupCount);
         if (!distribution.ok) return null;
         return distribution.distribution.reduce((sum, item) => sum + Number(item.topN || 0), 0);
@@ -3017,14 +3017,14 @@ ${data.reset_token}`, 'success');
         const selectedHasReset = getSelectedHasGrandFinalReset();
         const selectedFormat = getSelectedTournamentFormat();
         const selectedGroupTotalTeams = getSelectedGroupTotalTeams();
-        const selectedGroupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 2, 42, 2);
+        const selectedGroupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 1, 42, 2);
         const distributionResult = collectGroupDistribution(selectedGroupTotalTeams, selectedGroupCount);
         let validSetting = isValidTournamentSetting(selectedTeamCount, selectedMaxLosses);
         let settingWarning = getTournamentSettingWarning(selectedTeamCount, selectedMaxLosses);
         if (selectedFormat !== 'single_elimination') {
             validSetting = selectedGroupTotalTeams >= 4
                 && selectedGroupTotalTeams <= 128
-                && selectedGroupCount >= 2
+                && selectedGroupCount >= 1
                 && selectedGroupCount <= 42
                 && selectedGroupTotalTeams >= selectedGroupCount * 2
                 && distributionResult.ok
@@ -3104,7 +3104,7 @@ ${data.reset_token}`, 'success');
         const selectedHasReset = getSelectedHasGrandFinalReset();
         const selectedFormat = getSelectedTournamentFormat();
         const selectedGroupTotalTeams = getSelectedGroupTotalTeams();
-        const selectedGroupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 2, 42, 2);
+        const selectedGroupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 1, 42, 2);
         const selectedCycles = clampInt(document.getElementById('group-cycle-select')?.value || '1', 1, 2, 1);
         if (selectedFormat === 'single_elimination' && !isValidTournamentSetting(selectedTeamCount, selectedMaxLosses)) {
             alert(getTournamentSettingWarning(selectedTeamCount, selectedMaxLosses));

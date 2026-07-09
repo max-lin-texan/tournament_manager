@@ -106,8 +106,8 @@ def validate_group_knockout_state(state: dict, mode: str) -> None:
 
     if not groups:
         raise HTTPException(status_code=422, detail="group_stage.groups is required for group_knockout mode")
-    if len(groups) < 2 or len(groups) > 42:
-        raise HTTPException(status_code=422, detail="Group count must be between 2 and 42")
+    if len(groups) < 1 or len(groups) > 42:
+        raise HTTPException(status_code=422, detail="Group count must be between 1 and 42")
 
     total_teams = int(group_stage.get("total_teams") or 0)
     if total_teams and (total_teams < 4 or total_teams > 128):
