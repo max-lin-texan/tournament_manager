@@ -948,6 +948,7 @@
             <button id="group-edit-cancel-btn" class="btn-secondary hidden" type="button" onclick="cancelGroupEditing()">取消編輯</button>
             <span id="pending-settings-badge" class="pending-settings-badge hidden">設定已變更，尚未套用</span>
         </div>
+        <div id="readonly-editor-notice" class="format-note hidden">管理唯讀檢視：僅供查看與下載，不可修改賽程設定或比賽結果。</div>
         <div id="format-note" class="format-note hidden"></div>
         <div id="knockout-hint" class="knockout-hint hidden"></div>
         <div class="hint">提示：單敗支援 2–128 隊，非 2 的次方會自動補入輪空；雙敗仍只支援 4/8/16/32/64/128 隊。選擇雙敗時可設定是否有重賽；修改隊伍數、淘汰機制或重賽設定不會立刻清空，按「套用設定並重新產生」並確認後才會重建賽程。修改第一輪隊名會自動同步後續賽程；重選勝方會清除受影響的後續結果。</div>
@@ -1097,12 +1098,14 @@
     }
 
     function unlockGroupEditing() {
+        if (adminReadOnlyMode) return;
         groupEditModeUnlocked = true;
         refreshGroupWizardUI(false);
         updatePendingSettingsUI();
     }
 
     function cancelGroupEditing() {
+        if (adminReadOnlyMode) return;
         if (!hasEstablishedGroupStage()) return;
         groupEditModeUnlocked = false;
         const teamsSelect = document.getElementById('teams-select');
@@ -1147,6 +1150,7 @@
     }
 
     function confirmGroupStep1() {
+        if (adminReadOnlyMode) return;
         const totalTeams = getSelectedGroupTotalTeams();
         const groupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 2, 42, 2);
         const nextCycles = clampInt(document.getElementById('group-cycle-select')?.value || '1', 1, 2, 1);
@@ -1184,6 +1188,7 @@
     }
 
     function confirmGroupStep2() {
+        if (adminReadOnlyMode) return;
         const totalTeams = getSelectedGroupTotalTeams();
         const groupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 2, 42, 2);
         const distribution = collectGroupDistribution(totalTeams, groupCount);
@@ -1222,6 +1227,7 @@
     }
 
     function confirmGroupStep3() {
+        if (adminReadOnlyMode) return;
         const totalTeams = getSelectedGroupTotalTeams();
         const groupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 2, 42, 2);
         const distribution = collectGroupDistribution(totalTeams, groupCount);
@@ -1397,6 +1403,7 @@
         Array.from(standingsBuilder.querySelectorAll('input')).forEach((node) => {
             node.addEventListener('change', handlePendingSettingsChange);
         });
+        setGroupWizardInputsDisabled(adminReadOnlyMode);
     }
 
     function collectGroupDistribution(totalTeams, groupCount) {
@@ -1831,27 +1838,51 @@
     }
 
     function updateTournamentEditorMode() {
+        const readonly = adminReadOnlyMode;
         const titleInput = document.getElementById('tournament-title-input');
         const saveBtn = document.getElementById('tournament-save-btn');
         const backBtn = document.getElementById('tournament-back-btn');
         const teamsSelect = document.getElementById('teams-select');
+        const formatSelect = document.getElementById('format-select');
         const lossSelect = document.getElementById('loss-select');
         const resetSelect = document.getElementById('reset-select');
+        const controlsBar = document.querySelector('#tournament-app header .controls');
+        const groupPanel = document.getElementById('group-config-panel');
+        const hint = document.querySelector('#tournament-app header .hint');
+        const readonlyNotice = document.getElementById('readonly-editor-notice');
+        const formatNote = document.getElementById('format-note');
+        const knockoutHint = document.getElementById('knockout-hint');
 
-        if (titleInput) titleInput.disabled = adminReadOnlyMode;
-        if (teamsSelect) teamsSelect.disabled = adminReadOnlyMode;
-        if (lossSelect) lossSelect.disabled = adminReadOnlyMode;
-        if (resetSelect) resetSelect.disabled = adminReadOnlyMode;
-        if (saveBtn) saveBtn.classList.toggle('hidden', adminReadOnlyMode);
-        if (backBtn) backBtn.innerText = adminReadOnlyMode ? '回管理後台' : '回 Profile';
+        if (titleInput) titleInput.disabled = readonly;
+        [teamsSelect, formatSelect, lossSelect, resetSelect].forEach((node) => {
+            if (node) node.disabled = readonly;
+        });
+        if (controlsBar) controlsBar.classList.toggle('hidden', readonly);
+        if (hint) hint.classList.toggle('hidden', readonly);
+        if (readonlyNotice) readonlyNotice.classList.toggle('hidden', !readonly);
+        if (readonly && groupPanel) groupPanel.classList.add('hidden');
+        if (readonly && formatNote) formatNote.classList.add('hidden');
+        if (readonly && knockoutHint) knockoutHint.classList.add('hidden');
+        setGroupWizardInputsDisabled(readonly);
+
+        if (saveBtn) saveBtn.classList.toggle('hidden', readonly);
+        if (backBtn) backBtn.innerText = readonly ? '回管理後台' : '回 Profile';
         if (document.getElementById('editor-user-pill')) {
             const label = currentUser
                 ? `${currentUser.username} (${currentUser.email})${currentUser.role ? `｜${currentUser.role}` : ''}`
                 : '尚未登入';
-            document.getElementById('editor-user-pill').innerText = adminReadOnlyMode
+            document.getElementById('editor-user-pill').innerText = readonly
                 ? `管理唯讀檢視｜${label}`
                 : `賽程編輯器｜${label}`;
         }
+    }
+
+    function setGroupWizardInputsDisabled(disabled) {
+        const groupPanel = document.getElementById('group-config-panel');
+        if (!groupPanel) return;
+        groupPanel.querySelectorAll('input, select, button').forEach((node) => {
+            node.disabled = disabled;
+        });
     }
 
     function updateUserLabels() {
@@ -2947,6 +2978,7 @@ ${data.reset_token}`, 'success');
     }
 
     function handlePendingSettingsChange() {
+        if (adminReadOnlyMode) return;
         const selectedFormat = getSelectedTournamentFormat();
         if (selectedFormat === 'single_elimination') {
             groupWizardStep = 1;
@@ -3032,9 +3064,11 @@ ${data.reset_token}`, 'success');
         if (teamsControl) teamsControl.classList.toggle('pending', selectedTeamCount !== teamCount);
         if (lossControl) lossControl.classList.toggle('pending', selectedMaxLosses !== maxLosses);
         if (resetControl) resetControl.classList.toggle('pending', selectedHasReset !== hasGrandFinalReset);
+        updateTournamentEditorMode();
     }
 
     function revertPendingSettings() {
+        if (adminReadOnlyMode) return;
         document.getElementById('teams-select').value = String(lastAppliedTopSettings.teamCount);
         document.getElementById('loss-select').value = String(lastAppliedTopSettings.maxLosses);
         document.getElementById('reset-select').value = String(lastAppliedTopSettings.hasGrandFinalReset);
@@ -3047,6 +3081,7 @@ ${data.reset_token}`, 'success');
     }
 
     function applyTournamentSettings() {
+        if (adminReadOnlyMode) return;
         const selectedTeamCount = getSelectedTeamCount();
         const selectedMaxLosses = getSelectedMaxLosses();
         const selectedHasReset = getSelectedHasGrandFinalReset();
