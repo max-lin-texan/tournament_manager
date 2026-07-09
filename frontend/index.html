@@ -181,6 +181,19 @@
             border-radius: 8px;
             padding: 7px 8px;
         }
+        .group-readonly-value {
+            width: 100%;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--soft-border);
+            color: var(--text-muted);
+            border-radius: 8px;
+            padding: 7px 8px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            user-select: none;
+            pointer-events: none;
+            cursor: default;
+        }
         .group-config-panel textarea {
             min-height: 72px;
             resize: vertical;
@@ -958,7 +971,7 @@
                 <div class="group-step-grid">
                     <label>
                         小組總隊伍數（跟隨上方總隊伍數）
-                        <input id="group-total-teams-input" type="number" min="4" max="128" value="8" disabled readonly tabindex="-1" aria-readonly="true">
+                        <span id="group-total-teams-display" class="group-readonly-value" aria-live="polite">8 隊</span>
                     </label>
                     <label>
                         小組數（2-42）
@@ -1288,13 +1301,12 @@
     }
 
     function refreshGroupWizardUI(preserveDraft = true) {
-        const totalTeamsInput = document.getElementById('group-total-teams-input');
         const groupCountInput = document.getElementById('group-count-input');
         const step2 = document.getElementById('group-step-2');
         const step3 = document.getElementById('group-step-3');
         const distributionRows = document.getElementById('group-distribution-rows');
         const standingsBuilder = document.getElementById('group-standings-builder');
-        if (!totalTeamsInput || !groupCountInput || !step2 || !step3 || !distributionRows || !standingsBuilder) return;
+        if (!groupCountInput || !step2 || !step3 || !distributionRows || !standingsBuilder) return;
         const selectedFormat = getSelectedTournamentFormat();
         const isGroupOnly = selectedFormat === 'group_only';
 
@@ -1877,19 +1889,15 @@
     }
 
     function syncGroupTotalTeamsDisplay() {
-        const totalTeamsInput = document.getElementById('group-total-teams-input');
-        if (!totalTeamsInput) return;
-        totalTeamsInput.value = String(getSelectedGroupTotalTeams());
-        totalTeamsInput.disabled = true;
-        totalTeamsInput.readOnly = true;
-        totalTeamsInput.tabIndex = -1;
+        const totalTeamsDisplay = document.getElementById('group-total-teams-display');
+        if (!totalTeamsDisplay) return;
+        totalTeamsDisplay.textContent = `${getSelectedGroupTotalTeams()} 隊`;
     }
 
     function setGroupWizardInputsDisabled(disabled) {
         const groupPanel = document.getElementById('group-config-panel');
         if (!groupPanel) return;
         groupPanel.querySelectorAll('input, select, button').forEach((node) => {
-            if (node.id === 'group-total-teams-input') return;
             node.disabled = disabled;
         });
         syncGroupTotalTeamsDisplay();
