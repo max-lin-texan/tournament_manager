@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import re
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -67,6 +68,11 @@ def is_power_of_two(value: int) -> bool:
     return value > 0 and (value & (value - 1)) == 0
 
 
+def natural_sort_key(text: str) -> list:
+    """Match frontend Intl.Collator numeric sorting for names like Team 9 vs Team 10."""
+    return [int(part) if part.isdigit() else part.casefold() for part in re.split(r"(\d+)", str(text))]
+
+
 def build_group_rank_map(group_stage: dict) -> dict[str, list[str]]:
     groups = group_stage.get("groups") or []
     match_results = group_stage.get("results") or []
@@ -87,7 +93,7 @@ def build_group_rank_map(group_stage: dict) -> dict[str, list[str]]:
             if winner in wins and loser in wins and winner != loser:
                 wins[winner] += 1
 
-        ranked = sorted(teams, key=lambda team: (-wins[team], team))
+        ranked = sorted(teams, key=lambda team: (-wins[team], natural_sort_key(team)))
         rank_map[group_name] = ranked
     return rank_map
 
