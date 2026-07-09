@@ -63,6 +63,129 @@ def normalize_title(title: str) -> str:
     return title or "未命名賽程"
 
 
+def is_power_of_two(value: int) -> bool:
+    return value > 0 and (value & (value - 1)) == 0
+
+
+def build_group_rank_map(group_stage: dict) -> dict[str, list[str]]:
+    groups = group_stage.get("groups") or []
+    match_results = group_stage.get("results") or []
+    rank_map: dict[str, list[str]] = {}
+
+    for group in groups:
+        group_name = str(group.get("name") or "").strip()
+        teams = [str(team).strip() for team in (group.get("teams") or []) if str(team).strip()]
+        if not group_name or not teams:
+            continue
+        wins = {team: 0 for team in teams}
+
+        for result in match_results:
+            if str(result.get("group") or "").strip() != group_name:
+                continue
+            winner = str(result.get("winner") or "").strip()
+            loser = str(result.get("loser") or "").strip()
+            if winner in wins and loser in wins and winner != loser:
+                wins[winner] += 1
+
+        ranked = sorted(teams, key=lambda team: (-wins[team], team))
+        rank_map[group_name] = ranked
+    return rank_map
+
+
+def validate_group_knockout_state(state: dict, mode: str) -> None:
+    group_stage = state.get("group_stage") or {}
+    knockout_stage = state.get("knockout_stage") or {}
+    groups = group_stage.get("groups") or []
+    entrants = [str(team).strip() for team in (knockout_stage.get("entrants") or []) if str(team).strip()]
+
+    if not groups:
+        raise HTTPException(status_code=422, detail="group_stage.groups is required for group_knockout mode")
+    if len(groups) < 2 or len(groups) > 42:
+        raise HTTPException(status_code=422, detail="Group count must be between 2 and 42")
+
+    total_teams = int(group_stage.get("total_teams") or 0)
+    if total_teams and (total_teams < 4 or total_teams > 128):
+        raise HTTPException(status_code=422, detail="group_stage.total_teams must be between 4 and 128")
+
+    group_team_set: set[str] = set()
+    advance_rules = group_stage.get("advance_rules") or []
+    rank_map = build_group_rank_map(group_stage)
+    qualified_set: set[str] = set()
+    grouped_team_total = 0
+
+    for group in groups:
+        group_name = str(group.get("name") or "").strip()
+        group_teams = [str(team).strip() for team in (group.get("teams") or []) if str(team).strip()]
+        if not group_name:
+            raise HTTPException(status_code=422, detail="Each group must have a non-empty name")
+        if len(group_teams) < 2:
+            raise HTTPException(status_code=422, detail=f"Group {group_name} must contain at least 2 teams")
+        grouped_team_total += len(group_teams)
+        if len(set(group_teams)) != len(group_teams):
+            raise HTTPException(status_code=422, detail=f"Group {group_name} contains duplicated team names")
+        for team in group_teams:
+            if team in group_team_set:
+                raise HTTPException(status_code=422, detail=f"Team {team} appears in multiple groups")
+            group_team_set.add(team)
+
+    if grouped_team_total < 4 or grouped_team_total > 128:
+        raise HTTPException(status_code=422, detail="Total group teams must be between 4 and 128")
+    if total_teams and grouped_team_total != total_teams:
+        raise HTTPException(status_code=422, detail="Sum of group team sizes must equal group_stage.total_teams")
+
+    if mode == "group_knockout":
+        for rule in advance_rules:
+            group_name = str(rule.get("group") or "").strip()
+            top_n = int(rule.get("top_n") or 0)
+            ranked = rank_map.get(group_name) or []
+            if not group_name:
+                raise HTTPException(status_code=422, detail="advance_rules.group is required")
+            if top_n <= 0:
+                raise HTTPException(status_code=422, detail=f"advance_rules for {group_name} must have top_n >= 1")
+            if top_n > len(ranked):
+                raise HTTPException(status_code=422, detail=f"advance_rules for {group_name} exceeds group team count")
+            qualified_set.update(ranked[:top_n])
+
+    if mode != "group_knockout" or not entrants:
+        return
+
+    for team in entrants:
+        if team not in group_team_set:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Knockout entrant {team} is not in group stage team list",
+            )
+        if team not in qualified_set:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Knockout entrant {team} is not qualified from group stage",
+            )
+
+    if len(set(entrants)) != len(entrants):
+        raise HTTPException(status_code=422, detail="Knockout entrants cannot contain duplicates")
+
+    max_losses = int(knockout_stage.get("max_losses") or 1)
+    if max_losses == 2 and not is_power_of_two(len(entrants)):
+        raise HTTPException(
+            status_code=422,
+            detail="Double elimination in knockout stage requires entrant count to be a power of two",
+        )
+
+
+def validate_tournament_state(payload: TournamentCreate | TournamentUpdate) -> None:
+    data = payload.model_dump(exclude_unset=True)
+    state = data.get("state")
+    if not isinstance(state, dict):
+        return
+
+    mode = state.get("format") or "single_elimination"
+    if mode not in {"single_elimination", "group_knockout", "group_only"}:
+        raise HTTPException(status_code=422, detail="Unsupported tournament format")
+
+    if mode in {"group_knockout", "group_only"}:
+        validate_group_knockout_state(state, mode)
+
+
 def update_tournament_from_payload(tournament: Tournament, payload: TournamentCreate | TournamentUpdate) -> None:
     data = payload.model_dump(exclude_unset=True)
     if "title" in data and data["title"] is not None:
@@ -613,6 +736,7 @@ def create_tournament(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    validate_tournament_state(payload)
     tournament = Tournament(
         user_id=current_user.id,
         title=normalize_title(payload.title),
@@ -648,6 +772,7 @@ def update_tournament(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    validate_tournament_state(payload)
     tournament = db.get(Tournament, tournament_id)
     if tournament is None or tournament.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Tournament not found")

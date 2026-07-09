@@ -135,12 +135,131 @@
             color: var(--text-muted);
             font-size: 0.82rem;
         }
+        .group-config-panel {
+            margin-top: 12px;
+            border: 1px solid var(--soft-border);
+            border-radius: 10px;
+            padding: 10px;
+            background: rgba(255,255,255,0.02);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .group-step {
+            border: 1px solid var(--soft-border);
+            border-radius: 10px;
+            padding: 10px;
+            background: rgba(255,255,255,0.02);
+        }
+        .group-step-title {
+            font-weight: 900;
+            margin-bottom: 8px;
+            color: #fff;
+            font-size: 0.9rem;
+        }
+        .group-step-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 10px;
+            align-items: end;
+        }
+        .group-config-panel label {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: 700;
+        }
+        .group-config-panel input,
+        .group-config-panel textarea,
+        .group-config-panel select {
+            width: 100%;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--soft-border);
+            color: var(--text);
+            border-radius: 8px;
+            padding: 7px 8px;
+        }
+        .group-config-panel textarea {
+            min-height: 72px;
+            resize: vertical;
+        }
+        .group-summary {
+            margin-top: 10px;
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+        .knockout-hint {
+            margin-top: 8px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+        .group-standings-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+        }
+        @media (max-width: 900px) {
+            .group-standings-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+        @media (max-width: 640px) {
+            .group-standings-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .group-card {
+            border: 1px solid var(--soft-border);
+            border-radius: 10px;
+            padding: 10px;
+            background: rgba(255,255,255,0.02);
+        }
+        .qualified-row {
+            background-color: rgba(16, 185, 129, 0.12);
+        }
+        .win-btn.active {
+            background: rgba(16, 185, 129, 0.85);
+            color: #052e16;
+            font-weight: 900;
+        }
+        .group-match-cell {
+            cursor: pointer;
+            border-radius: 6px;
+            transition: background-color 0.15s ease, color 0.15s ease;
+        }
+        .group-match-cell:hover {
+            background: rgba(59, 130, 246, 0.12);
+        }
+        .group-match-cell.active {
+            background: rgba(16, 185, 129, 0.18);
+            color: #bbf7d0;
+            font-weight: 900;
+        }
+        .group-match-cell.readonly {
+            cursor: default;
+            opacity: 0.8;
+        }
+        .group-match-cell.readonly:hover {
+            background: transparent;
+        }
+        .btn-flash-success {
+            animation: flashSuccess 0.42s ease-out;
+        }
+        @keyframes flashSuccess {
+            0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.85); }
+            100% { box-shadow: 0 0 0 9px rgba(16,185,129,0); }
+        }
 
         .leaderboard-section {
             padding: 15px;
             margin-bottom: 20px;
-            max-height: 245px;
-            overflow-y: auto;
+            max-height: none;
+            overflow: visible;
         }
 
         .leaderboard-table {
@@ -796,9 +915,17 @@
     <header>
         <div class="controls">
             <div id="teams-control" class="control-group">
-                <label for="teams-select">隊伍數：</label>
+                <label for="teams-select">總隊伍數：</label>
                 <select id="teams-select">
                     <option value="4" selected>4 隊</option>
+                </select>
+            </div>
+            <div id="format-control" class="control-group">
+                <label for="format-select">賽程模式：</label>
+                <select id="format-select">
+                    <option value="single_elimination" selected>單純淘汰賽（預設）</option>
+                    <option value="group_knockout">小組賽＋淘汰賽</option>
+                    <option value="group_only">純小組循環賽</option>
                 </select>
             </div>
             <div id="loss-control" class="control-group">
@@ -817,13 +944,58 @@
             </div>
             <button id="apply-settings-btn" class="btn-generate" type="button" onclick="applyTournamentSettings()">重新產生賽程</button>
             <button id="revert-settings-btn" class="btn-secondary hidden" type="button" onclick="revertPendingSettings()">取消變更</button>
+            <button id="group-edit-toggle-btn" class="btn-secondary hidden" type="button" onclick="unlockGroupEditing()">修改現有賽程</button>
+            <button id="group-edit-cancel-btn" class="btn-secondary hidden" type="button" onclick="cancelGroupEditing()">取消編輯</button>
             <span id="pending-settings-badge" class="pending-settings-badge hidden">設定已變更，尚未套用</span>
         </div>
         <div id="format-note" class="format-note hidden"></div>
+        <div id="knockout-hint" class="knockout-hint hidden"></div>
         <div class="hint">提示：單敗支援 2–128 隊，非 2 的次方會自動補入輪空；雙敗仍只支援 4/8/16/32/64/128 隊。選擇雙敗時可設定是否有重賽；修改隊伍數、淘汰機制或重賽設定不會立刻清空，按「套用設定並重新產生」並確認後才會重建賽程。修改第一輪隊名會自動同步後續賽程；重選勝方會清除受影響的後續結果。</div>
+        <div id="group-config-panel" class="group-config-panel hidden">
+            <div class="group-step">
+                <div class="group-step-title">Step 1：設定總隊伍數與小組數</div>
+                <div class="group-step-grid">
+                    <label>
+                        小組總隊伍數（跟隨上方總隊伍數）
+                        <input id="group-total-teams-input" type="number" min="4" max="128" value="8" disabled>
+                    </label>
+                    <label>
+                        小組數（2-42）
+                        <input id="group-count-input" type="number" min="2" max="42" value="2">
+                    </label>
+                    <label>
+                        每組循環次數
+                        <select id="group-cycle-select">
+                            <option value="1" selected>單循環</option>
+                            <option value="2">雙循環</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="dashboard-actions" style="margin-top:8px;">
+                    <button id="group-step-1-confirm" class="btn-secondary" type="button">確認/更新 Step 1</button>
+                </div>
+            </div>
+            <div id="group-step-2" class="group-step hidden">
+                <div class="group-step-title">Step 2：設定各小組隊伍數與晉級名額</div>
+                <div id="group-distribution-rows" class="group-step-grid"></div>
+                <div class="dashboard-actions" style="margin-top:8px;">
+                    <button id="group-step-2-confirm" class="btn-secondary" type="button">確認/更新 Step 2</button>
+                </div>
+            </div>
+            <div id="group-step-3" class="group-step hidden">
+                <div class="group-step-title">Step 3：填寫分組名單（每排兩組）</div>
+                <div id="group-standings-builder" class="group-standings-grid"></div>
+                <div class="dashboard-actions" style="margin-top:8px;">
+                    <button id="group-step-3-confirm" class="btn-secondary" type="button">確認/更新 Step 3</button>
+                </div>
+            </div>
+        </div>
+        <div id="group-summary" class="group-summary hidden"></div>
     </header>
 
-    <div class="leaderboard-section">
+    <div id="group-leaderboard-section" class="leaderboard-section hidden"></div>
+    <div id="knockout-leaderboard-section" class="leaderboard-section">
+        <h2 class="dashboard-title">淘汰賽戰績表</h2>
         <table class="leaderboard-table">
             <thead>
                 <tr><th>排名</th><th>隊伍名稱</th><th>勝場</th><th>敗場</th><th>勝率</th><th>目前狀態</th></tr>
@@ -832,7 +1004,7 @@
         </table>
     </div>
 
-    <div class="arena-wrapper">
+    <div id="arena-wrapper" class="arena-wrapper">
         <div class="arena-title" id="arena-main-title"></div>
         <div id="pyramid-canvas" class="pyramid-container">
             <svg id="bracket-lines" class="bracket-lines" aria-hidden="true"></svg>
@@ -857,6 +1029,26 @@
     let loserRoutes = {};
     let matchOrder = [];
     let columns = { winners: [], losers: [] };
+    let tournamentFormat = 'single_elimination';
+    let groupStageData = {
+        totalTeams: 8,
+        groupCount: 2,
+        cycles: 1,
+        distribution: [],
+        groups: [],
+        matches: [],
+        results: [],
+        advanceRules: [],
+    };
+    let groupWizardStep = 1;
+    let groupEditModeUnlocked = true;
+    let lastGroupTotalTeamsForWizard = 4;
+    let lastAppliedTopSettings = {
+        teamCount: 4,
+        maxLosses: 1,
+        format: 'single_elimination',
+        hasGrandFinalReset: false,
+    };
 
     // Local frontend uses local API; Netlify/production uses Heroku API.
     const API_BASE_URL = (() => {
@@ -890,7 +1082,585 @@
         document.getElementById('teams-select').addEventListener('change', handlePendingSettingsChange);
         document.getElementById('loss-select').addEventListener('change', handlePendingSettingsChange);
         document.getElementById('reset-select').addEventListener('change', handlePendingSettingsChange);
+        document.getElementById('format-select').addEventListener('change', handlePendingSettingsChange);
+        document.getElementById('group-count-input').addEventListener('change', handlePendingSettingsChange);
+        document.getElementById('group-cycle-select').addEventListener('change', handlePendingSettingsChange);
+        document.getElementById('group-step-1-confirm').addEventListener('click', confirmGroupStep1);
+        document.getElementById('group-step-2-confirm').addEventListener('click', confirmGroupStep2);
+        document.getElementById('group-step-3-confirm').addEventListener('click', confirmGroupStep3);
+        refreshGroupWizardUI();
         updatePendingSettingsUI();
+    }
+
+    function hasEstablishedGroupStage() {
+        return (groupStageData.groups || []).length > 0 && (groupStageData.matches || []).length > 0;
+    }
+
+    function unlockGroupEditing() {
+        groupEditModeUnlocked = true;
+        refreshGroupWizardUI(false);
+        updatePendingSettingsUI();
+    }
+
+    function cancelGroupEditing() {
+        if (!hasEstablishedGroupStage()) return;
+        groupEditModeUnlocked = false;
+        const teamsSelect = document.getElementById('teams-select');
+        const groupTotalInput = document.getElementById('group-total-teams-input');
+        if (teamsSelect) teamsSelect.value = String(getTotalTeamCount());
+        if (groupTotalInput) groupTotalInput.value = String(getTotalTeamCount());
+        restoreGroupWizardInputsFromState();
+        showToast('已取消編輯，維持原有賽程設定。', 'info', 1400);
+    }
+
+    function getTotalTeamCount() {
+        if (tournamentFormat === 'single_elimination') return teamCount;
+        return Number(groupStageData.totalTeams || teamCount || getSelectedTeamCount());
+    }
+
+    function getKnockoutEntrantCount() {
+        if (tournamentFormat !== 'group_knockout') return teamCount;
+        const qualified = deriveQualifiedTeams(groupStageData);
+        return qualified.length >= 2 ? qualified.length : Math.max(2, qualified.length);
+    }
+
+    function flashButton(buttonId) {
+        const button = document.getElementById(buttonId);
+        if (!button) return;
+        button.classList.remove('btn-flash-success');
+        void button.offsetWidth;
+        button.classList.add('btn-flash-success');
+        window.setTimeout(() => button.classList.remove('btn-flash-success'), 500);
+    }
+
+    function restoreGroupWizardInputsFromState() {
+        const groupCountInput = document.getElementById('group-count-input');
+        const groupCycleSelect = document.getElementById('group-cycle-select');
+        if (groupCountInput) groupCountInput.value = String(groupStageData.groupCount || 2);
+        if (groupCycleSelect) groupCycleSelect.value = String(groupStageData.cycles || 1);
+        refreshGroupWizardUI(false);
+        updatePendingSettingsUI();
+    }
+
+    function getSelectedGroupTotalTeams() {
+        return clampInt(document.getElementById('teams-select')?.value || String(getTotalTeamCount()), 4, 128, 4);
+    }
+
+    function confirmGroupStep1() {
+        const totalTeams = getSelectedGroupTotalTeams();
+        const groupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 2, 42, 2);
+        const nextCycles = clampInt(document.getElementById('group-cycle-select')?.value || '1', 1, 2, 1);
+        if (totalTeams < groupCount * 2) {
+            alert('每組至少要有 2 隊，請調整總隊伍數或小組數。');
+            return;
+        }
+        const hasExistingGroupData = (groupStageData.matches || []).length > 0 || (groupStageData.results || []).length > 0;
+        const step1Changed = Number(groupStageData.totalTeams || 0) !== totalTeams
+            || Number(groupStageData.groupCount || 0) !== groupCount
+            || Number(groupStageData.cycles || 1) !== nextCycles;
+        const cycleChanged = Number(groupStageData.cycles || 1) !== nextCycles;
+        if (hasExistingGroupData && step1Changed) {
+            const ok = confirm('你已建立小組賽資料。修改 Step 1（包含循環次數）可能會影響後續設定與賽果，確定要繼續嗎？');
+            if (!ok) {
+                restoreGroupWizardInputsFromState();
+                return;
+            }
+        }
+        const shouldRebuildMatchesNow = step1Changed && cycleChanged && (groupStageData.groups || []).length > 0;
+        groupStageData.totalTeams = totalTeams;
+        groupStageData.groupCount = groupCount;
+        groupStageData.cycles = nextCycles;
+        if (shouldRebuildMatchesNow) {
+            groupStageData.matches = buildGroupMatches(groupStageData.groups, groupStageData.cycles);
+            groupStageData.results = [];
+            renderGroupSection();
+            showToast('循環設定已更新並重建小組賽程。', 'success', 1400);
+        }
+        groupWizardStep = Math.max(groupWizardStep, 2);
+        refreshGroupWizardUI();
+        updatePendingSettingsUI();
+        flashButton('group-step-1-confirm');
+        if (!shouldRebuildMatchesNow) showToast('Step 1 已更新', 'success', 1200);
+    }
+
+    function confirmGroupStep2() {
+        const totalTeams = getSelectedGroupTotalTeams();
+        const groupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 2, 42, 2);
+        const distribution = collectGroupDistribution(totalTeams, groupCount);
+        if (!distribution.ok) {
+            alert(distribution.error || '小組分配設定不完整。');
+            return;
+        }
+        const nextCycles = clampInt(document.getElementById('group-cycle-select')?.value || '1', 1, 2, 1);
+        const nextDistribution = distribution.distribution;
+        const nextAdvanceRules = nextDistribution.map((dist) => ({
+            group: `Group ${dist.letter}`,
+            top_n: dist.topN,
+        }));
+        const step2Changed = JSON.stringify(groupStageData.distribution || []) !== JSON.stringify(nextDistribution)
+            || JSON.stringify(groupStageData.advanceRules || []) !== JSON.stringify(nextAdvanceRules);
+        const hasExistingGroupData = (groupStageData.matches || []).length > 0 || (groupStageData.results || []).length > 0;
+        if (hasExistingGroupData && step2Changed) {
+            const ok = confirm('這會更新小組賽設定並重建賽程，既有小組賽結果將會清除。確定要繼續嗎？');
+            if (!ok) {
+                refreshGroupWizardUI(false);
+                updatePendingSettingsUI();
+                return;
+            }
+        }
+        groupStageData.totalTeams = totalTeams;
+        groupStageData.groupCount = groupCount;
+        groupStageData.cycles = nextCycles;
+        groupStageData.distribution = nextDistribution;
+        groupStageData.advanceRules = nextAdvanceRules;
+        if (hasExistingGroupData && step2Changed) groupStageData.results = [];
+        groupWizardStep = Math.max(groupWizardStep, 3);
+        refreshGroupWizardUI();
+        updatePendingSettingsUI();
+        flashButton('group-step-2-confirm');
+        showToast('Step 2 已更新', 'success', 1200);
+    }
+
+    function confirmGroupStep3() {
+        const totalTeams = getSelectedGroupTotalTeams();
+        const groupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 2, 42, 2);
+        const distribution = collectGroupDistribution(totalTeams, groupCount);
+        if (!distribution.ok) {
+            alert(distribution.error || 'Step 2 設定不完整。');
+            return;
+        }
+        const groups = splitTeamsIntoGroups(totalTeams, groupCount, distribution.distribution);
+        const seen = new Set();
+        for (const group of groups) {
+            for (const teamName of group.teams) {
+                if (!teamName.trim()) {
+                    alert('隊伍名稱不可空白。');
+                    return;
+                }
+                if (seen.has(teamName)) {
+                    alert(`隊伍名稱不可重複：${teamName}`);
+                    return;
+                }
+                seen.add(teamName);
+            }
+        }
+        const step3Changed = JSON.stringify(groupStageData.groups || []) !== JSON.stringify(groups);
+        const hasExistingGroupResult = (groupStageData.results || []).length > 0;
+        if (hasExistingGroupResult && step3Changed) {
+            const ok = confirm('你已建立小組賽結果。修改分組名單會清除既有小組賽結果，確定要繼續嗎？');
+            if (!ok) {
+                refreshGroupWizardUI(false);
+                updatePendingSettingsUI();
+                return;
+            }
+        }
+        groupStageData.totalTeams = totalTeams;
+        groupStageData.groupCount = groupCount;
+        groupStageData.cycles = clampInt(document.getElementById('group-cycle-select')?.value || '1', 1, 2, 1);
+        groupStageData.distribution = distribution.distribution;
+        groupStageData.groups = groups;
+        groupStageData.advanceRules = distribution.distribution.map((dist) => ({
+            group: `Group ${dist.letter}`,
+            top_n: dist.topN,
+        }));
+        groupStageData.matches = buildGroupMatches(groups, groupStageData.cycles);
+        if (step3Changed) groupStageData.results = [];
+        groupWizardStep = Math.max(groupWizardStep, 4);
+        renderGroupSection();
+        updatePendingSettingsUI();
+        flashButton('group-step-3-confirm');
+        showToast('Step 3 已更新', 'success', 1200);
+    }
+
+    function clampInt(value, min, max, fallback) {
+        const number = Number.parseInt(String(value), 10);
+        if (!Number.isInteger(number)) return fallback;
+        return Math.max(min, Math.min(max, number));
+    }
+
+    function getGroupLetter(index) {
+        return String.fromCharCode(65 + index);
+    }
+
+    function refreshGroupWizardUI(preserveDraft = true) {
+        const totalTeamsInput = document.getElementById('group-total-teams-input');
+        const groupCountInput = document.getElementById('group-count-input');
+        const step2 = document.getElementById('group-step-2');
+        const step3 = document.getElementById('group-step-3');
+        const distributionRows = document.getElementById('group-distribution-rows');
+        const standingsBuilder = document.getElementById('group-standings-builder');
+        if (!totalTeamsInput || !groupCountInput || !step2 || !step3 || !distributionRows || !standingsBuilder) return;
+        const selectedFormat = getSelectedTournamentFormat();
+        const isGroupOnly = selectedFormat === 'group_only';
+
+        const totalTeams = getSelectedGroupTotalTeams();
+        const groupCount = clampInt(groupCountInput.value, 2, 42, 2);
+        totalTeamsInput.value = String(totalTeams);
+        groupCountInput.value = String(groupCount);
+        if (totalTeams < groupCount * 2) {
+            step2.classList.add('hidden');
+            step3.classList.add('hidden');
+            distributionRows.innerHTML = '';
+            standingsBuilder.innerHTML = '';
+            return;
+        }
+
+        const previousSizeValues = {};
+        const previousTopValues = {};
+        const previousTeamNames = {};
+        if (preserveDraft) {
+            for (let i = 0; i < groupCount; i++) {
+                const sizeNode = document.getElementById(`group-size-${i}`);
+                const topNode = document.getElementById(`group-top-${i}`);
+                if (sizeNode) previousSizeValues[i] = sizeNode.value;
+                if (topNode) previousTopValues[i] = topNode.value;
+                for (let j = 0; j < 256; j++) {
+                    const teamNode = document.getElementById(`group-team-${i}-${j}`);
+                    if (!teamNode) break;
+                    previousTeamNames[`${i}-${j}`] = teamNode.value;
+                }
+            }
+        }
+
+        step2.classList.toggle('hidden', groupWizardStep < 2);
+        step3.classList.add('hidden');
+        if (groupWizardStep < 2) {
+            distributionRows.innerHTML = '';
+            standingsBuilder.innerHTML = '';
+            return;
+        }
+        const topTeamsChanged = totalTeams !== lastGroupTotalTeamsForWizard;
+        const baseSize = Math.floor(totalTeams / groupCount);
+        const extra = totalTeams % groupCount;
+        const currentDistribution = groupStageData.distribution || [];
+        distributionRows.innerHTML = '';
+        for (let i = 0; i < groupCount; i++) {
+            const letter = getGroupLetter(i);
+            const defaultTeams = baseSize + (i < extra ? 1 : 0);
+            const fallbackTop = 1;
+            const preset = currentDistribution[i] || {};
+            const currentSizeFromUi = previousSizeValues[i];
+            const currentTopFromUi = previousTopValues[i];
+            const resolvedTeamCount = topTeamsChanged
+                ? defaultTeams
+                : clampInt(currentSizeFromUi ?? preset.teamCount, 2, totalTeams, defaultTeams);
+            const resolvedTopN = topTeamsChanged
+                ? Math.min(fallbackTop, resolvedTeamCount)
+                : clampInt(currentTopFromUi ?? preset.topN, 1, totalTeams, fallbackTop);
+            distributionRows.insertAdjacentHTML('beforeend', `
+                <label>
+                    ${letter} 組
+                    <input id="group-size-${i}" type="number" min="2" max="${totalTeams}" value="${resolvedTeamCount}">
+                    <small class="small-note">此組隊伍數</small>
+                    ${isGroupOnly ? '' : `<input id="group-top-${i}" type="number" min="1" max="${totalTeams}" value="${resolvedTopN}">
+                    <small class="small-note">此組取前幾名</small>`}
+                </label>
+            `);
+        }
+        lastGroupTotalTeamsForWizard = totalTeams;
+
+        Array.from(distributionRows.querySelectorAll('input')).forEach((node) => {
+            node.addEventListener('change', handlePendingSettingsChange);
+        });
+
+        const collected = collectGroupDistribution(totalTeams, groupCount);
+        if (!collected.ok || groupWizardStep < 3) {
+            step3.classList.add('hidden');
+            standingsBuilder.innerHTML = '';
+            return;
+        }
+        step3.classList.remove('hidden');
+
+        const currentGroups = groupStageData.groups || [];
+        let serialSeed = 1;
+        standingsBuilder.innerHTML = collected.distribution.map((dist, idx) => {
+            const letter = getGroupLetter(idx);
+            const existingTeams = currentGroups[idx]?.teams || [];
+            const rows = Array.from({ length: dist.teamCount }, (_, teamIdx) => {
+                const draftName = previousTeamNames[`${idx}-${teamIdx}`];
+                const fallbackName = `Team ${serialSeed++}`;
+                const currentName = draftName || existingTeams[teamIdx] || fallbackName;
+                return `<tr>
+                    <td>${teamIdx + 1}</td>
+                    <td><input id="group-team-${idx}-${teamIdx}" type="text" value="${escapeHtml(currentName)}"></td>
+                </tr>`;
+            }).join('');
+            return `<div class="group-card">
+                <h4>${letter} 組名單</h4>
+                <table class="leaderboard-table">
+                    <thead><tr><th>序號</th><th>隊伍名稱</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
+        }).join('');
+
+        Array.from(standingsBuilder.querySelectorAll('input')).forEach((node) => {
+            node.addEventListener('change', handlePendingSettingsChange);
+        });
+    }
+
+    function collectGroupDistribution(totalTeams, groupCount) {
+        const isGroupOnly = getSelectedTournamentFormat() === 'group_only';
+        const distribution = [];
+        let teamSum = 0;
+        for (let i = 0; i < groupCount; i++) {
+            const teamCount = clampInt(document.getElementById(`group-size-${i}`)?.value, 2, 128, 2);
+            const topN = isGroupOnly
+                ? teamCount
+                : clampInt(document.getElementById(`group-top-${i}`)?.value, 1, teamCount, 1);
+            distribution.push({ letter: getGroupLetter(i), teamCount, topN });
+            teamSum += teamCount;
+        }
+        if (teamSum !== totalTeams) {
+            return { ok: false, error: `各組隊伍數總和需等於總隊伍數（目標 ${totalTeams}，目前 ${teamSum}）` };
+        }
+        return { ok: true, distribution };
+    }
+
+    function getProjectedQualifiedCount() {
+        const selectedFormat = getSelectedTournamentFormat();
+        if (selectedFormat !== 'group_knockout') return null;
+        const totalTeams = getSelectedGroupTotalTeams();
+        const groupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 2, 42, 2);
+        const distribution = collectGroupDistribution(totalTeams, groupCount);
+        if (!distribution.ok) return null;
+        return distribution.distribution.reduce((sum, item) => sum + Number(item.topN || 0), 0);
+    }
+
+    function getSelectedTournamentFormat() {
+        return document.getElementById('format-select')?.value || 'single_elimination';
+    }
+
+    function parseNameList(text) {
+        return String(text || '')
+            .split(/\r?\n|,/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+    }
+
+    function splitTeamsIntoGroups(totalTeams, groupCount, distribution) {
+        let serial = 1;
+        return distribution.map((item, groupIndex) => {
+            const teams = [];
+            for (let teamIndex = 0; teamIndex < item.teamCount; teamIndex++) {
+                const input = document.getElementById(`group-team-${groupIndex}-${teamIndex}`);
+                const fallback = `Team ${serial}`;
+                teams.push((input?.value || '').trim() || fallback);
+                serial += 1;
+            }
+            return { name: `Group ${item.letter}`, teams };
+        });
+    }
+
+    function assignBalancedHomeAway(rounds) {
+        const stats = {};
+        const ensure = (name) => {
+            if (!stats[name]) stats[name] = { home: 0, away: 0 };
+            return stats[name];
+        };
+        const evaluate = (home, away) => {
+            const homeStats = ensure(home);
+            const awayStats = ensure(away);
+            const homeDiff = Math.abs((homeStats.home + 1) - homeStats.away);
+            const awayDiff = Math.abs(awayStats.home - (awayStats.away + 1));
+            return homeDiff + awayDiff;
+        };
+
+        return rounds.map((pairs, roundIdx) => pairs.map(([team1, team2], matchIdx) => {
+            ensure(team1);
+            ensure(team2);
+            const keepScore = evaluate(team1, team2);
+            const flipScore = evaluate(team2, team1);
+            let home = team1;
+            let away = team2;
+            if (flipScore < keepScore || (flipScore === keepScore && ((roundIdx + matchIdx) % 2 === 1))) {
+                home = team2;
+                away = team1;
+            }
+            stats[home].home += 1;
+            stats[away].away += 1;
+            return { home, away };
+        }));
+    }
+
+    function roundRobinPairs(teams) {
+        if (teams.length < 2) return [];
+        const pool = [...teams];
+        if (pool.length % 2 === 1) pool.push('__BYE__');
+        const rawRounds = [];
+        for (let round = 0; round < pool.length - 1; round++) {
+            const pairs = [];
+            const half = pool.length / 2;
+            for (let i = 0; i < half; i++) {
+                const team1 = pool[i];
+                const team2 = pool[pool.length - 1 - i];
+                if (team1 !== '__BYE__' && team2 !== '__BYE__') pairs.push([team1, team2]);
+            }
+            rawRounds.push(pairs);
+            pool.splice(1, 0, pool.pop());
+        }
+        return assignBalancedHomeAway(rawRounds);
+    }
+
+    function buildGroupMatches(groups, cycles) {
+        const groupedRounds = groups.map((group) => {
+            const rounds = roundRobinPairs(group.teams);
+            const allRounds = [];
+            for (let cycle = 1; cycle <= cycles; cycle++) {
+                rounds.forEach((pairs, roundIndex) => {
+                    const normalized = pairs.map((pair) => (
+                        cycle === 1 ? { home: pair.home, away: pair.away } : { home: pair.away, away: pair.home }
+                    ));
+                    allRounds.push({
+                        group: group.name,
+                        round: roundIndex + 1 + (cycle - 1) * rounds.length,
+                        matches: normalized,
+                    });
+                });
+            }
+            return allRounds;
+        });
+
+        const maxRounds = Math.max(...groupedRounds.map((rounds) => rounds.length), 0);
+        const interleaved = [];
+        for (let roundIndex = 0; roundIndex < maxRounds; roundIndex++) {
+            groupedRounds.forEach((rounds) => {
+                if (rounds[roundIndex]) {
+                    rounds[roundIndex].matches.forEach((match, matchIndex) => {
+                        interleaved.push({
+                            id: `${rounds[roundIndex].group}_R${rounds[roundIndex].round}_M${matchIndex + 1}`,
+                            group: rounds[roundIndex].group,
+                            round: rounds[roundIndex].round,
+                            home: match.home,
+                            away: match.away,
+                        });
+                    });
+                }
+            });
+        }
+        return interleaved;
+    }
+
+    function getGroupWinsMap(matches, results) {
+        const resultList = Array.isArray(results) ? results : [];
+        const winsByGroup = {};
+        matches.forEach((match) => {
+            if (!winsByGroup[match.group]) winsByGroup[match.group] = {};
+            winsByGroup[match.group][match.home] = winsByGroup[match.group][match.home] || 0;
+            winsByGroup[match.group][match.away] = winsByGroup[match.group][match.away] || 0;
+        });
+        resultList.forEach((result) => {
+            const group = String(result.group || '').trim();
+            const winner = String(result.winner || '').trim();
+            if (winsByGroup[group] && winner in winsByGroup[group]) winsByGroup[group][winner] += 1;
+        });
+        return winsByGroup;
+    }
+
+    function getGroupResultByMatchId(matchId) {
+        return (groupStageData.results || []).find((item) => item.match_id === matchId) || null;
+    }
+
+    function setGroupMatchWinner(matchId, winnerName) {
+        const match = (groupStageData.matches || []).find((item) => item.id === matchId);
+        if (!match) return;
+        const existing = getGroupResultByMatchId(matchId);
+        if (existing && existing.winner === winnerName) {
+            winnerName = null;
+        }
+        const nextResults = (groupStageData.results || []).filter((item) => item.match_id !== matchId);
+        if (winnerName) {
+            const loserName = winnerName === match.home ? match.away : match.home;
+            nextResults.push({
+                match_id: match.id,
+                group: match.group,
+                winner: winnerName,
+                loser: loserName,
+            });
+        }
+        groupStageData.results = nextResults;
+        renderGroupSection();
+    }
+
+    function deriveQualifiedTeams(groupData) {
+        const winsByGroup = getGroupWinsMap(groupData.matches, groupData.results);
+        const qualified = [];
+        groupData.groups.forEach((group) => {
+            const wins = winsByGroup[group.name] || {};
+            const ranked = [...group.teams].sort((a, b) => (wins[b] || 0) - (wins[a] || 0) || naturalCompare(a, b));
+            const topNRule = groupData.advanceRules.find((item) => item.group === group.name);
+            const topN = Math.max(1, Number(topNRule?.top_n || 1));
+            qualified.push(...ranked.slice(0, topN));
+        });
+        return qualified;
+    }
+
+    function renderGroupSection() {
+        const section = document.getElementById('group-leaderboard-section');
+        const summary = document.getElementById('group-summary');
+        if (!section || !summary) return;
+
+        if (tournamentFormat === 'single_elimination') {
+            section.classList.add('hidden');
+            summary.classList.add('hidden');
+            return;
+        }
+
+        const winsByGroup = getGroupWinsMap(groupStageData.matches, groupStageData.results);
+        const blocks = groupStageData.groups.map((group) => {
+            const wins = winsByGroup[group.name] || {};
+            const ranked = [...group.teams].sort((a, b) => (wins[b] || 0) - (wins[a] || 0) || naturalCompare(a, b));
+            const topNRule = (groupStageData.advanceRules || []).find((item) => item.group === group.name);
+            const topN = Math.max(1, Number(topNRule?.top_n || 1));
+            const shouldHighlightQualified = tournamentFormat === 'group_knockout';
+            return `
+                <div class="group-card">
+                    <h3>${escapeHtml(group.name)} 戰績</h3>
+                    <table class="leaderboard-table">
+                        <thead><tr><th>排名</th><th>隊伍</th><th>勝場</th></tr></thead>
+                        <tbody>
+                            ${ranked.map((team, idx) => `<tr class="${shouldHighlightQualified && idx < topN ? 'qualified-row' : ''}"><td>${idx + 1}</td><td>${escapeHtml(team)}</td><td>${wins[team] || 0}</td></tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }).join('');
+
+        section.innerHTML = `<h2 class="dashboard-title">小組賽戰績表</h2><div class="group-standings-grid">${blocks}</div><h3>小組賽程（直接點主/客欄位切換勝方）</h3>
+            <table class="leaderboard-table">
+                <thead><tr><th>#</th><th>小組</th><th>輪次</th><th>客隊</th><th>主隊</th></tr></thead>
+                <tbody>
+                    ${groupStageData.matches.map((m, idx) => {
+                        const result = getGroupResultByMatchId(m.id);
+                        const winner = result?.winner || '';
+                        const canEdit = !adminReadOnlyMode;
+                        const awayClass = `group-match-cell ${winner === m.away ? 'active' : ''} ${canEdit ? '' : 'readonly'}`.trim();
+                        const homeClass = `group-match-cell ${winner === m.home ? 'active' : ''} ${canEdit ? '' : 'readonly'}`.trim();
+                        const awayOnClick = canEdit
+                            ? ` onclick='setGroupMatchWinner(${toInlineJsString(m.id)}, ${toInlineJsString(m.away)})'`
+                            : '';
+                        const homeOnClick = canEdit
+                            ? ` onclick='setGroupMatchWinner(${toInlineJsString(m.id)}, ${toInlineJsString(m.home)})'`
+                            : '';
+                        return `<tr>
+                            <td>${idx + 1}</td>
+                            <td>${escapeHtml(m.group)}</td>
+                            <td>${m.round}</td>
+                            <td class="${awayClass}"${awayOnClick}>${winner === m.away ? '✓ ' : ''}${escapeHtml(m.away)}</td>
+                            <td class="${homeClass}"${homeOnClick}>${winner === m.home ? '✓ ' : ''}${escapeHtml(m.home)}</td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>`;
+        section.classList.remove('hidden');
+        summary.classList.remove('hidden');
+
+        if (tournamentFormat === 'group_only') {
+            summary.innerText = '目前為純小組循環賽模式：僅顯示小組戰績表。若戰績相同，依隊名字元順序排序。';
+        } else {
+            const qualified = deriveQualifiedTeams(groupStageData);
+            summary.innerText = `目前晉級名單（同戰績按字元排序）：${qualified.join('、') || '尚未產生'}`;
+        }
     }
 
     function setMessage(id, message, type = '') {
@@ -1696,11 +2466,15 @@ ${data.reset_token}`, 'success');
             tournaments.forEach((item) => {
                 const div = document.createElement('div');
                 div.className = 'saved-item';
-                const modeText = item.max_losses === 2 ? '雙敗' : '單敗';
+                const format = item.state?.format || 'single_elimination';
+                const modeText = format === 'group_only'
+                    ? '純小組賽'
+                    : (format === 'group_knockout' ? `小組＋淘汰（${item.max_losses === 2 ? '雙敗' : '單敗'}）` : (item.max_losses === 2 ? '雙敗' : '單敗'));
+                const completedByState = isTournamentCompletedByState(item);
                 div.innerHTML = `
                     <div>
                         <div class="saved-title">${escapeHtml(item.title)}</div>
-                        <div class="saved-meta">狀態：${item.champion ? `已完成，冠軍 ${escapeHtml(item.champion)}` : '進行中'}｜${item.team_count || '—'} 隊｜${modeText}｜更新：${formatDateTimeForDisplay(item.updated_at)}</div>
+                        <div class="saved-meta">狀態：${item.champion ? `已完成，冠軍 ${escapeHtml(item.champion)}` : (completedByState ? '已完成' : '進行中')}｜${item.team_count || '—'} 隊｜${modeText}｜更新：${formatDateTimeForDisplay(item.updated_at)}</div>
                     </div>
                     <div class="saved-actions">
                         <button class="btn-secondary" type="button" onclick="openTournament(${item.id})">載入</button>
@@ -1714,9 +2488,54 @@ ${data.reset_token}`, 'success');
         }
     }
 
+    function isTournamentCompletedByState(item) {
+        const state = item?.state || {};
+        if ((state.format || 'single_elimination') !== 'group_only') return !!item?.champion;
+        const matches = state.group_stage?.matches || state.groupStage?.matches || [];
+        const results = state.group_stage?.results || state.groupStage?.results || [];
+        return matches.length > 0 && results.length >= matches.length;
+    }
+
     function startNewTournament() {
         adminReadOnlyMode = false;
         currentTournamentId = null;
+        teamCount = 4;
+        maxLosses = 1;
+        hasGrandFinalReset = false;
+        tournamentFormat = 'single_elimination';
+        groupWizardStep = 1;
+        groupEditModeUnlocked = true;
+        groupStageData = {
+            totalTeams: 8,
+            groupCount: 2,
+            cycles: 1,
+            distribution: [],
+            groups: [],
+            matches: [],
+            results: [],
+            advanceRules: [],
+        };
+        lastAppliedTopSettings = {
+            teamCount: 4,
+            maxLosses: 1,
+            format: 'single_elimination',
+            hasGrandFinalReset: false,
+        };
+        const teamsSelect = document.getElementById('teams-select');
+        const lossSelect = document.getElementById('loss-select');
+        const resetSelect = document.getElementById('reset-select');
+        const formatSelect = document.getElementById('format-select');
+        const groupCountInput = document.getElementById('group-count-input');
+        const groupCycleSelect = document.getElementById('group-cycle-select');
+        if (teamsSelect) teamsSelect.value = '4';
+        if (lossSelect) lossSelect.value = '1';
+        if (resetSelect) resetSelect.value = 'false';
+        if (formatSelect) formatSelect.value = 'single_elimination';
+        if (groupCountInput) groupCountInput.value = '2';
+        if (groupCycleSelect) groupCycleSelect.value = '1';
+        populateTeamSelectOptions();
+        refreshGroupWizardUI();
+        updatePendingSettingsUI();
         const titleInput = document.getElementById('tournament-title-input');
         if (titleInput) titleInput.value = `新賽程 ${formatDateTimeForDisplay(new Date().toISOString())}`;
         initTournament();
@@ -1747,8 +2566,11 @@ ${data.reset_token}`, 'success');
     }
 
     function buildTournamentStatePayload() {
+        const qualified = deriveQualifiedTeams(groupStageData);
+        const entrants = qualified;
         return {
-            teamCount,
+            format: tournamentFormat,
+            teamCount: getTotalTeamCount(),
             maxLosses,
             hasGrandFinalReset,
             bracketSize,
@@ -1761,11 +2583,25 @@ ${data.reset_token}`, 'success');
             loserRoutes,
             matchOrder,
             columns,
+            groupStage: groupStageData,
+            group_stage: {
+                total_teams: groupStageData.totalTeams,
+                groups: groupStageData.groups,
+                matches: groupStageData.matches,
+                results: groupStageData.results,
+                advance_rules: groupStageData.advanceRules,
+            },
+            knockout_stage: {
+                entrants,
+                max_losses: maxLosses,
+                has_grand_final_reset: hasGrandFinalReset,
+            },
             savedAt: new Date().toISOString()
         };
     }
 
     function applyTournamentStatePayload(state) {
+        tournamentFormat = state.format || 'single_elimination';
         teamCount = state.teamCount || 4;
         maxLosses = state.maxLosses || 1;
         hasGrandFinalReset = !!state.hasGrandFinalReset;
@@ -1779,13 +2615,58 @@ ${data.reset_token}`, 'success');
         loserRoutes = state.loserRoutes || {};
         matchOrder = state.matchOrder || [];
         columns = state.columns || { winners: [], losers: [] };
+        const snakeGroupStage = state.group_stage || {};
+        const snakeAdvanceRules = snakeGroupStage.advance_rules || [];
+        groupStageData = state.groupStage || {
+            totalTeams: Number(snakeGroupStage.total_teams || state.teamCount || 8),
+            groupCount: Number((snakeGroupStage.groups || []).length || 2),
+            cycles: 1,
+            distribution: (snakeGroupStage.groups || []).map((group) => ({
+                letter: String(group.name || '').replace('Group ', '') || 'A',
+                teamCount: (group.teams || []).length,
+                topN: Number((snakeAdvanceRules.find((item) => item.group === group.name) || {}).top_n || 1),
+            })),
+            groups: snakeGroupStage.groups || [],
+            matches: snakeGroupStage.matches || [],
+            results: snakeGroupStage.results || [],
+            advanceRules: snakeAdvanceRules,
+        };
+        if (tournamentFormat !== 'single_elimination') {
+            const groupSum = (groupStageData.groups || []).reduce((sum, group) => sum + ((group.teams || []).length), 0);
+            const savedTotal = Number(snakeGroupStage.total_teams || groupStageData.totalTeams || 0);
+            const inferredTotal = savedTotal || groupSum || Number(state.teamCount || 4);
+            teamCount = inferredTotal;
+            groupStageData.totalTeams = inferredTotal;
+        }
+        if (tournamentFormat === 'group_knockout') {
+            const knockoutTeams = Math.max(2, (teamNames || []).length);
+            bracketSize = state.bracketSize || getBracketSizeFor(knockoutTeams, maxLosses);
+            byeCount = state.byeCount ?? getByeCountFor(knockoutTeams, maxLosses);
+        }
+        lastAppliedTopSettings = {
+            teamCount,
+            maxLosses,
+            format: tournamentFormat,
+            hasGrandFinalReset,
+        };
+        groupWizardStep = tournamentFormat === 'single_elimination' ? 1 : 4;
+        groupEditModeUnlocked = !hasEstablishedGroupStage();
 
         const teamsSelect = document.getElementById('teams-select');
         const lossSelect = document.getElementById('loss-select');
         const resetSelect = document.getElementById('reset-select');
-        if (teamsSelect) teamsSelect.value = String(teamCount);
+        const formatSelect = document.getElementById('format-select');
+        if (teamsSelect) teamsSelect.value = String(getTotalTeamCount());
         if (lossSelect) lossSelect.value = String(maxLosses);
         if (resetSelect) resetSelect.value = String(hasGrandFinalReset);
+        if (formatSelect) formatSelect.value = tournamentFormat;
+        const groupTotalInput = document.getElementById('group-total-teams-input');
+        const groupCountInput = document.getElementById('group-count-input');
+        const groupCycleSelect = document.getElementById('group-cycle-select');
+        if (groupTotalInput) groupTotalInput.value = String(getSelectedGroupTotalTeams());
+        if (groupCountInput) groupCountInput.value = String(groupStageData.groupCount || 2);
+        if (groupCycleSelect) groupCycleSelect.value = String(groupStageData.cycles || 1);
+        refreshGroupWizardUI();
 
         if (!Object.keys(tournamentData).length || !matchOrder.length) {
             tournamentData = {};
@@ -1799,16 +2680,34 @@ ${data.reset_token}`, 'success');
             resolveAutomaticByes();
         }
 
-        const bracketText = byeCount > 0 ? `，${bracketSize} 格 / ${byeCount} 輪空` : '';
-        const resetText = maxLosses === 2 ? `，${describeResetMode(hasGrandFinalReset)}` : '';
-        document.getElementById('arena-main-title').innerText = `${describeMode(maxLosses)}淘汰賽程（${teamCount} 隊${bracketText}${resetText}）`;
-
+        syncArenaTitle();
         const canvas = document.getElementById('pyramid-canvas');
         canvas.classList.toggle('single-wing', maxLosses === 1);
 
         renderTree();
         recalculateStats();
+        renderGroupSection();
         updatePendingSettingsUI();
+    }
+
+    function syncArenaTitle() {
+        const titleNode = document.getElementById('arena-main-title');
+        if (!titleNode) return;
+        const totalTeams = getTotalTeamCount();
+        if (tournamentFormat === 'group_only') {
+            titleNode.innerText = `小組循環賽（總 ${totalTeams} 隊）`;
+            return;
+        }
+        if (tournamentFormat === 'group_knockout') {
+            const knockoutTeams = getKnockoutEntrantCount();
+            const bracketText = byeCount > 0 ? `，${bracketSize} 格 / ${byeCount} 輪空` : '';
+            const resetText = maxLosses === 2 ? `，${describeResetMode(hasGrandFinalReset)}` : '';
+            titleNode.innerText = `${describeMode(maxLosses)}淘汰賽程（總 ${totalTeams} 隊，晉級 ${knockoutTeams} 隊${bracketText}${resetText}）`;
+            return;
+        }
+        const bracketText = byeCount > 0 ? `，${bracketSize} 格 / ${byeCount} 輪空` : '';
+        const resetText = maxLosses === 2 ? `，${describeResetMode(hasGrandFinalReset)}` : '';
+        titleNode.innerText = `${describeMode(maxLosses)}淘汰賽程（${totalTeams} 隊${bracketText}${resetText}）`;
     }
 
     async function saveCurrentTournament() {
@@ -1824,7 +2723,7 @@ ${data.reset_token}`, 'success');
         const payload = {
             title,
             champion: grandChampion || null,
-            team_count: teamCount,
+            team_count: getTotalTeamCount(),
             max_losses: maxLosses,
             has_grand_final_reset: hasGrandFinalReset,
             state: buildTournamentStatePayload(),
@@ -1861,6 +2760,18 @@ ${data.reset_token}`, 'success');
         return parseInt(document.getElementById('teams-select').value, 10);
     }
 
+    function normalizeTeamCountForCurrentFormat() {
+        const format = getSelectedTournamentFormat();
+        const teamsSelect = document.getElementById('teams-select');
+        if (!teamsSelect) return;
+        if (format !== 'single_elimination') {
+            const current = getSelectedTeamCount();
+            if (current < 4) {
+                teamsSelect.value = '4';
+            }
+        }
+    }
+
     function getSelectedMaxLosses() {
         return parseInt(document.getElementById('loss-select').value, 10);
     }
@@ -1872,14 +2783,17 @@ ${data.reset_token}`, 'success');
     function populateTeamSelectOptions() {
         const select = document.getElementById('teams-select');
         if (!select) return;
+        const isGroupMode = getSelectedTournamentFormat() !== 'single_elimination';
+        const minTeams = isGroupMode ? 4 : 2;
+        const currentValue = clampInt(select.value || String(teamCount), minTeams, 128, Math.max(teamCount, minTeams));
         select.innerHTML = '';
-        for (let count = 2; count <= 128; count++) {
+        for (let count = minTeams; count <= 128; count++) {
             const option = document.createElement('option');
             option.value = String(count);
-            option.textContent = isSupportedDoubleEliminationCount(count)
+            option.textContent = isGroupMode
                 ? `${count} 隊`
-                : `${count} 隊（單敗）`;
-            if (count === teamCount) option.selected = true;
+                : (isSupportedDoubleEliminationCount(count) ? `${count} 隊` : `${count} 隊（單敗）`);
+            if (count === currentValue) option.selected = true;
             select.appendChild(option);
         }
     }
@@ -1928,9 +2842,64 @@ ${data.reset_token}`, 'success');
         const teamSelect = document.getElementById('teams-select');
         const lossSelect = document.getElementById('loss-select');
         if (!teamSelect || !lossSelect) return;
+        const selectedFormat = getSelectedTournamentFormat();
+        const selectedLoss = getSelectedMaxLosses();
+        const resetSelect = document.getElementById('reset-select');
+        const knockoutHint = document.getElementById('knockout-hint');
+        if (selectedFormat !== 'single_elimination') {
+            const projectedQualified = getProjectedQualifiedCount();
+            const canChooseKnockout = selectedFormat === 'group_knockout' && groupWizardStep >= 3 && projectedQualified !== null;
+            lossSelect.disabled = !canChooseKnockout;
+            Array.from(lossSelect.options).forEach((option) => {
+                if (selectedFormat !== 'group_knockout') {
+                    option.disabled = true;
+                    return;
+                }
+                if (!canChooseKnockout) {
+                    option.disabled = true;
+                    return;
+                }
+                const value = parseInt(option.value, 10);
+                if (value === 2) {
+                    option.disabled = !isSupportedDoubleEliminationCount(projectedQualified || 0);
+                } else {
+                    option.disabled = false;
+                }
+            });
+            if (selectedFormat === 'group_knockout' && canChooseKnockout) {
+                const canDouble = isSupportedDoubleEliminationCount(projectedQualified || 0);
+                if (!canDouble && selectedLoss === 2) {
+                    lossSelect.value = '1';
+                }
+                if (knockoutHint) {
+                    knockoutHint.classList.remove('hidden');
+                    knockoutHint.innerText = canDouble
+                        ? `目前預計晉級 ${projectedQualified} 隊，可選單敗或雙敗`
+                        : `目前預計晉級 ${projectedQualified} 隊，僅可單敗（雙敗需 2 的次方且 >= 4）`;
+                }
+                if (resetSelect) resetSelect.disabled = lossSelect.value !== '2';
+            } else {
+                if (knockoutHint) {
+                    knockoutHint.classList.remove('hidden');
+                    knockoutHint.innerText = selectedFormat === 'group_knockout'
+                        ? '請先完成 Step 2 設定，才可選擇淘汰機制'
+                        : '純小組賽不需要淘汰機制';
+                }
+                lossSelect.value = '1';
+                if (resetSelect) {
+                    resetSelect.value = 'false';
+                    resetSelect.disabled = true;
+                }
+            }
+            Array.from(teamSelect.options).forEach((option) => { option.disabled = false; });
+            return;
+        }
+        if (knockoutHint) knockoutHint.classList.add('hidden');
+        lossSelect.disabled = false;
+        if (resetSelect) resetSelect.disabled = selectedLoss !== 2;
 
         const selectedTeamCount = getSelectedTeamCount();
-        const selectedMaxLosses = getSelectedMaxLosses();
+        const selectedMaxLosses = selectedLoss;
         const doubleOption = Array.from(lossSelect.options).find((option) => option.value === '2');
         if (doubleOption) doubleOption.disabled = !isSupportedDoubleEliminationCount(selectedTeamCount);
 
@@ -1957,6 +2926,11 @@ ${data.reset_token}`, 'success');
         return matchOrder.some((id) => tournamentData[id]?.winner !== null && !matchHasBye(id));
     }
 
+    function hasKnockoutStarted() {
+        if (tournamentFormat !== 'group_knockout') return false;
+        return matchOrder.some((id) => tournamentData[id]?.winner !== null);
+    }
+
     function hasCustomizedTeamNames() {
         return teamNames.some((name, index) => name !== `Team ${index + 1}`);
     }
@@ -1965,34 +2939,74 @@ ${data.reset_token}`, 'success');
         return hasPlayedMatches() || hasCustomizedTeamNames() || !!grandChampion;
     }
 
-    function hasPendingSettings() {
-        return getSelectedTeamCount() !== teamCount
-            || getSelectedMaxLosses() !== maxLosses
-            || getSelectedHasGrandFinalReset() !== hasGrandFinalReset;
+    function hasPendingTopSettings() {
+        return getSelectedTeamCount() !== lastAppliedTopSettings.teamCount
+            || getSelectedMaxLosses() !== lastAppliedTopSettings.maxLosses
+            || getSelectedHasGrandFinalReset() !== lastAppliedTopSettings.hasGrandFinalReset
+            || getSelectedTournamentFormat() !== lastAppliedTopSettings.format;
     }
 
     function handlePendingSettingsChange() {
+        const selectedFormat = getSelectedTournamentFormat();
+        if (selectedFormat === 'single_elimination') {
+            groupWizardStep = 1;
+            groupEditModeUnlocked = true;
+        }
+        normalizeTeamCountForCurrentFormat();
+        document.getElementById('group-total-teams-input').value = String(getSelectedGroupTotalTeams());
+        refreshGroupWizardUI();
+        populateTeamSelectOptions();
         refreshSettingsOptionAvailability();
         updatePendingSettingsUI();
     }
 
     function updatePendingSettingsUI() {
         refreshSettingsOptionAvailability();
-        const pending = hasPendingSettings();
+        const pending = hasPendingTopSettings();
         const selectedTeamCount = getSelectedTeamCount();
         const selectedMaxLosses = getSelectedMaxLosses();
         const selectedHasReset = getSelectedHasGrandFinalReset();
-        const validSetting = isValidTournamentSetting(selectedTeamCount, selectedMaxLosses);
-        const settingWarning = getTournamentSettingWarning(selectedTeamCount, selectedMaxLosses);
+        const selectedFormat = getSelectedTournamentFormat();
+        const selectedGroupTotalTeams = getSelectedGroupTotalTeams();
+        const selectedGroupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 2, 42, 2);
+        const distributionResult = collectGroupDistribution(selectedGroupTotalTeams, selectedGroupCount);
+        let validSetting = isValidTournamentSetting(selectedTeamCount, selectedMaxLosses);
+        let settingWarning = getTournamentSettingWarning(selectedTeamCount, selectedMaxLosses);
+        if (selectedFormat !== 'single_elimination') {
+            validSetting = selectedGroupTotalTeams >= 4
+                && selectedGroupTotalTeams <= 128
+                && selectedGroupCount >= 2
+                && selectedGroupCount <= 42
+                && selectedGroupTotalTeams >= selectedGroupCount * 2
+                && distributionResult.ok
+                && groupWizardStep >= 4;
+            settingWarning = distributionResult.ok
+                ? (groupWizardStep >= 4 ? '' : '請依序按「確認 Step 1 / Step 2 / Step 3」後再套用')
+                : (distributionResult.error || '請先完成小組分配設定');
+        }
         const badge = document.getElementById('pending-settings-badge');
         const revertButton = document.getElementById('revert-settings-btn');
         const applyButton = document.getElementById('apply-settings-btn');
         const teamsControl = document.getElementById('teams-control');
         const lossControl = document.getElementById('loss-control');
         const resetControl = document.getElementById('reset-control');
+        const groupPanel = document.getElementById('group-config-panel');
+        const groupEditToggleBtn = document.getElementById('group-edit-toggle-btn');
+        const groupEditCancelBtn = document.getElementById('group-edit-cancel-btn');
+        const knockoutLeaderboard = document.getElementById('knockout-leaderboard-section');
+        const arenaWrapper = document.getElementById('arena-wrapper');
         const formatNote = document.getElementById('format-note');
+        const shouldHideGroupPanelForExisting = selectedFormat !== 'single_elimination' && hasEstablishedGroupStage() && !groupEditModeUnlocked;
 
-        if (resetControl) resetControl.classList.toggle('hidden', selectedMaxLosses !== 2);
+        if (lossControl) lossControl.classList.toggle('hidden', selectedFormat === 'group_only');
+        if (resetControl) resetControl.classList.toggle('hidden', selectedMaxLosses !== 2 || selectedFormat === 'group_only');
+        if (groupPanel) groupPanel.classList.toggle('hidden', selectedFormat === 'single_elimination' || shouldHideGroupPanelForExisting);
+        if (groupEditToggleBtn) groupEditToggleBtn.classList.toggle('hidden', !(selectedFormat !== 'single_elimination' && shouldHideGroupPanelForExisting));
+        if (groupEditCancelBtn) {
+            groupEditCancelBtn.classList.toggle('hidden', !(selectedFormat !== 'single_elimination' && hasEstablishedGroupStage() && groupEditModeUnlocked));
+        }
+        if (knockoutLeaderboard) knockoutLeaderboard.classList.toggle('hidden', selectedFormat === 'group_only');
+        if (arenaWrapper) arenaWrapper.classList.toggle('hidden', selectedFormat === 'group_only');
 
         if (badge) {
             badge.classList.toggle('hidden', !pending && validSetting);
@@ -2007,9 +3021,13 @@ ${data.reset_token}`, 'success');
         }
         if (revertButton) revertButton.classList.toggle('hidden', !pending);
         if (applyButton) {
-            applyButton.innerText = pending ? '套用設定並重新產生' : '重新產生賽程';
-            applyButton.disabled = !validSetting;
-            applyButton.title = validSetting ? '' : settingWarning;
+            if (selectedFormat === 'single_elimination') {
+                applyButton.innerText = pending ? '套用設定並重新產生' : '重新產生賽程';
+            } else {
+                applyButton.innerText = pending ? '套用設定（建立/更新賽程）' : '更新賽程';
+            }
+            applyButton.disabled = !validSetting || !pending;
+            applyButton.title = !validSetting ? settingWarning : (pending ? '' : '僅上方全域設定變更時才需要套用');
         }
         if (teamsControl) teamsControl.classList.toggle('pending', selectedTeamCount !== teamCount);
         if (lossControl) lossControl.classList.toggle('pending', selectedMaxLosses !== maxLosses);
@@ -2017,9 +3035,14 @@ ${data.reset_token}`, 'success');
     }
 
     function revertPendingSettings() {
-        document.getElementById('teams-select').value = String(teamCount);
-        document.getElementById('loss-select').value = String(maxLosses);
-        document.getElementById('reset-select').value = String(hasGrandFinalReset);
+        document.getElementById('teams-select').value = String(lastAppliedTopSettings.teamCount);
+        document.getElementById('loss-select').value = String(lastAppliedTopSettings.maxLosses);
+        document.getElementById('reset-select').value = String(lastAppliedTopSettings.hasGrandFinalReset);
+        document.getElementById('format-select').value = lastAppliedTopSettings.format;
+        document.getElementById('group-total-teams-input').value = String(getSelectedGroupTotalTeams());
+        document.getElementById('group-count-input').value = String(groupStageData.groupCount || 2);
+        document.getElementById('group-cycle-select').value = String(groupStageData.cycles || 1);
+        refreshGroupWizardUI();
         updatePendingSettingsUI();
     }
 
@@ -2027,14 +3050,32 @@ ${data.reset_token}`, 'success');
         const selectedTeamCount = getSelectedTeamCount();
         const selectedMaxLosses = getSelectedMaxLosses();
         const selectedHasReset = getSelectedHasGrandFinalReset();
-        if (!isValidTournamentSetting(selectedTeamCount, selectedMaxLosses)) {
+        const selectedFormat = getSelectedTournamentFormat();
+        const selectedGroupTotalTeams = getSelectedGroupTotalTeams();
+        const selectedGroupCount = clampInt(document.getElementById('group-count-input')?.value || '2', 2, 42, 2);
+        const selectedCycles = clampInt(document.getElementById('group-cycle-select')?.value || '1', 1, 2, 1);
+        if (selectedFormat === 'single_elimination' && !isValidTournamentSetting(selectedTeamCount, selectedMaxLosses)) {
             alert(getTournamentSettingWarning(selectedTeamCount, selectedMaxLosses));
             updatePendingSettingsUI();
             return;
         }
-        const pending = selectedTeamCount !== teamCount
-            || selectedMaxLosses !== maxLosses
-            || selectedHasReset !== hasGrandFinalReset;
+        if (selectedFormat !== 'single_elimination' && groupWizardStep < 4) {
+            alert('請先完成 Step 1 / Step 2 / Step 3 的確認，再進行套用。');
+            return;
+        }
+        const changingKnockoutMode = tournamentFormat === 'group_knockout'
+            && selectedFormat === 'group_knockout'
+            && selectedMaxLosses !== maxLosses;
+        if (changingKnockoutMode && hasKnockoutStarted()) {
+            const ok = confirm('淘汰賽已開始。修改淘汰機制會重建淘汰賽並清除既有淘汰賽結果（保留小組賽結果），確定要繼續嗎？');
+            if (!ok) {
+                document.getElementById('loss-select').value = String(maxLosses);
+                document.getElementById('reset-select').value = String(hasGrandFinalReset);
+                updatePendingSettingsUI();
+                return;
+            }
+        }
+        const pending = hasPendingTopSettings();
         const warning = pending
             ? `套用 ${describeTournamentSetting(selectedTeamCount, selectedMaxLosses, selectedHasReset)} 會重新產生賽程，並清除目前隊名與比賽紀錄。確定要繼續？`
             : '重新產生會清除目前隊名與比賽紀錄。確定要繼續？';
@@ -2047,36 +3088,128 @@ ${data.reset_token}`, 'success');
         teamCount = selectedTeamCount;
         maxLosses = selectedMaxLosses;
         hasGrandFinalReset = selectedMaxLosses === 2 && selectedHasReset;
+        tournamentFormat = selectedFormat;
+        lastAppliedTopSettings = {
+            teamCount,
+            maxLosses,
+            format: tournamentFormat,
+            hasGrandFinalReset,
+        };
+
+        if (selectedFormat === 'single_elimination') {
+            initTournament();
+            updatePendingSettingsUI();
+            renderGroupSection();
+            return;
+        }
+
+        const distributionResult = collectGroupDistribution(selectedGroupTotalTeams, selectedGroupCount);
+        if (!distributionResult.ok) {
+            alert(distributionResult.error);
+            return;
+        }
+        const groups = splitTeamsIntoGroups(selectedGroupTotalTeams, selectedGroupCount, distributionResult.distribution);
+        const seen = new Set();
+        for (const group of groups) {
+            for (const teamName of group.teams) {
+                if (seen.has(teamName)) {
+                    alert(`隊伍名稱不可重複：${teamName}`);
+                    return;
+                }
+                seen.add(teamName);
+            }
+        }
+        const advanceRules = distributionResult.distribution.map((dist) => ({
+            group: `Group ${dist.letter}`,
+            top_n: dist.topN,
+        }));
+        const matches = buildGroupMatches(groups, selectedCycles);
+        groupStageData = {
+            totalTeams: selectedGroupTotalTeams,
+            groupCount: groups.length,
+            cycles: selectedCycles,
+            distribution: distributionResult.distribution,
+            groups,
+            matches,
+            results: [],
+            advanceRules,
+        };
+        const autoQualified = deriveQualifiedTeams(groupStageData);
+        const entrantsToUse = autoQualified;
+        teamCount = selectedGroupTotalTeams;
+        groupStageData.totalTeams = selectedGroupTotalTeams;
+        if (selectedFormat === 'group_knockout') {
+            if (entrantsToUse.length < 2) {
+                alert('小組賽＋淘汰賽模式至少需要 2 支晉級隊伍。');
+                return;
+            }
+            if (maxLosses === 2 && !isPowerOfTwo(entrantsToUse.length)) {
+                alert('晉級隊伍數不是 2 的次方，復賽不可選雙敗。');
+                return;
+            }
+        } else if (selectedFormat === 'group_only') {
+            maxLosses = 1;
+            hasGrandFinalReset = false;
+        }
         document.getElementById('reset-select').value = String(hasGrandFinalReset);
         initTournament();
+        if (selectedFormat === 'group_knockout') {
+            teamNames = [...entrantsToUse];
+            teamStats = {};
+            teamNames.forEach((name) => { teamStats[name] = { w: 0, l: 0, out: false }; });
+            seedOpeningRound();
+            resolveAutomaticByes();
+            renderTree();
+            recalculateStats();
+        }
         updatePendingSettingsUI();
+        renderGroupSection();
     }
 
     function initTournament() {
         tournamentData = {};
         teamStats = {};
-        teamNames = Array.from({ length: teamCount }, (_, index) => `Team ${index + 1}`);
+        if (tournamentFormat === 'group_knockout') {
+            const autoQualified = deriveQualifiedTeams(groupStageData);
+            teamNames = autoQualified.length >= 2 ? [...autoQualified] : ['Team 1', 'Team 2'];
+            teamCount = Number(groupStageData.totalTeams || teamCount);
+        } else if (tournamentFormat === 'group_only') {
+            teamCount = Number(groupStageData.totalTeams || teamCount);
+            teamNames = Array.from({ length: teamCount }, (_, index) => `Team ${index + 1}`);
+        } else {
+            teamNames = Array.from({ length: teamCount }, (_, index) => `Team ${index + 1}`);
+        }
         grandChampion = null;
         winnerRoutes = {};
         loserRoutes = {};
         matchOrder = [];
         columns = { winners: [], losers: [] };
-        bracketSize = getBracketSizeFor(teamCount, maxLosses);
-        byeCount = getByeCountFor(teamCount, maxLosses);
+        const knockoutTeams = tournamentFormat === 'group_knockout' ? teamNames.length : teamCount;
+        bracketSize = getBracketSizeFor(knockoutTeams, maxLosses);
+        byeCount = getByeCountFor(knockoutTeams, maxLosses);
 
         teamNames.forEach((name) => { teamStats[name] = { w: 0, l: 0, out: false }; });
-        const bracketText = byeCount > 0 ? `，${bracketSize} 格 / ${byeCount} 輪空` : '';
-        const resetText = maxLosses === 2 ? `，${describeResetMode(hasGrandFinalReset)}` : '';
-        document.getElementById('arena-main-title').innerText = `${describeMode(maxLosses)}淘汰賽程（${teamCount} 隊${bracketText}${resetText}）`;
+        syncArenaTitle();
 
         const canvas = document.getElementById('pyramid-canvas');
         canvas.classList.toggle('single-wing', maxLosses === 1);
+        if (tournamentFormat === 'group_only') {
+            document.getElementById('arena-wrapper').classList.add('hidden');
+            document.getElementById('knockout-leaderboard-section').classList.add('hidden');
+            renderGroupSection();
+            return;
+        }
 
+        document.getElementById('arena-wrapper').classList.remove('hidden');
+        if (tournamentFormat !== 'group_only') {
+            document.getElementById('knockout-leaderboard-section').classList.remove('hidden');
+        }
         buildTopology();
         seedOpeningRound();
         resolveAutomaticByes();
         renderTree();
         recalculateStats();
+        renderGroupSection();
     }
 
     function createMatch(id, label, side, roundKey) {
@@ -2806,7 +3939,7 @@ ${baseStyle}
             <h1 class="report-title">${grandChampion ? '淘汰賽比賽結果' : '淘汰賽目前進度'}</h1>
             <div class="report-champion">🏆 總冠軍：${escapeHtml(grandChampion || '尚未產生')}</div>
             <div class="report-meta">
-                <span>隊伍數：${teamCount} 隊</span>
+                <span>總隊伍數：${getTotalTeamCount()} 隊</span>
                 <span>淘汰機制：${modeText}</span>
                 ${maxLosses === 2 ? `<span>是否有重賽：${hasGrandFinalReset ? '是' : '否'}</span>` : ''}
                 ${byeCount > 0 ? `<span>賽程格數：${bracketSize} 格 / ${byeCount} 輪空</span>` : ''}
@@ -3005,6 +4138,10 @@ ${baseStyle}
 
     function naturalCompare(a, b) {
         return naturalCollator.compare(a, b);
+    }
+
+    function toInlineJsString(value) {
+        return JSON.stringify(String(value)).replace(/</g, '\\u003c');
     }
 
     function escapeHtml(value) {
