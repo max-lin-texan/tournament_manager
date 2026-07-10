@@ -130,6 +130,7 @@ class TournamentListItem(BaseModel):
     team_count: int | None
     max_losses: int | None
     has_grand_final_reset: bool
+    format: str = "single_elimination"
     completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -158,6 +159,7 @@ class AdminTournamentOut(BaseModel):
     team_count: int | None
     max_losses: int | None
     has_grand_final_reset: bool
+    format: str = "single_elimination"
     completed_at: datetime | None
     created_at: datetime
     updated_at: datetime

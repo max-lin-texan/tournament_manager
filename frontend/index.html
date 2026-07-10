@@ -2222,7 +2222,7 @@ Role: ${currentUser.role || 'member'}`;
                             <td>${escapeHtml(item.title)}</td>
                             <td>${item.champion ? `已完成：${escapeHtml(item.champion)}` : '進行中'}</td>
                             <td>${item.team_count || '—'}</td>
-                            <td>${item.max_losses === 2 ? '雙敗' : '單敗'}</td>
+                            <td>${describeTournamentListMode(item)}</td>
                             <td>${formatDateTimeForDisplay(item.updated_at)}</td>
                             <td>
                                 <button class="btn-secondary" type="button" onclick="openAdminTournament(${item.id})">查看</button>
@@ -2515,10 +2515,7 @@ ${data.reset_token}`, 'success');
             tournaments.forEach((item) => {
                 const div = document.createElement('div');
                 div.className = 'saved-item';
-                const format = item.state?.format || 'single_elimination';
-                const modeText = format === 'group_only'
-                    ? '純小組賽'
-                    : (format === 'group_knockout' ? `小組＋淘汰（${item.max_losses === 2 ? '雙敗' : '單敗'}）` : (item.max_losses === 2 ? '雙敗' : '單敗'));
+                const modeText = describeTournamentListMode(item);
                 const completedByState = isTournamentCompletedByState(item);
                 div.innerHTML = `
                     <div>
@@ -2959,6 +2956,18 @@ ${data.reset_token}`, 'success');
 
     function describeMode(lossCount) {
         return lossCount === 1 ? '單敗' : '雙敗';
+    }
+
+    function getTournamentFormatFromItem(item) {
+        return item?.format || item?.state?.format || 'single_elimination';
+    }
+
+    function describeTournamentListMode(item) {
+        const format = getTournamentFormatFromItem(item);
+        if (format === 'group_only') return '純小組賽';
+        const maxLosses = Number(item?.max_losses ?? item?.state?.maxLosses ?? item?.state?.knockout_stage?.max_losses ?? 1);
+        if (format === 'group_knockout') return `小組＋淘汰（${maxLosses === 2 ? '雙敗' : '單敗'}）`;
+        return maxLosses === 2 ? '雙敗' : '單敗';
     }
 
     function describeResetMode(resetEnabled) {

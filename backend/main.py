@@ -73,6 +73,12 @@ def natural_sort_key(text: str) -> list:
     return [int(part) if part.isdigit() else part.casefold() for part in re.split(r"(\d+)", str(text))]
 
 
+def get_tournament_format(state: dict | None) -> str:
+    if not isinstance(state, dict):
+        return "single_elimination"
+    return state.get("format") or "single_elimination"
+
+
 def build_group_rank_map(group_stage: dict) -> dict[str, list[str]]:
     groups = group_stage.get("groups") or []
     match_results = group_stage.get("results") or []
@@ -270,6 +276,7 @@ def ensure_user_management_permission(
 
 
 def build_admin_tournament_out(tournament: Tournament, owner: User | None) -> AdminTournamentOut:
+    state = tournament.state if isinstance(tournament.state, dict) else {}
     return AdminTournamentOut(
         id=tournament.id,
         user_id=tournament.user_id,
@@ -280,6 +287,23 @@ def build_admin_tournament_out(tournament: Tournament, owner: User | None) -> Ad
         team_count=tournament.team_count,
         max_losses=tournament.max_losses,
         has_grand_final_reset=tournament.has_grand_final_reset,
+        format=get_tournament_format(state),
+        completed_at=tournament.completed_at,
+        created_at=tournament.created_at,
+        updated_at=tournament.updated_at,
+    )
+
+
+def build_tournament_list_item(tournament: Tournament) -> TournamentListItem:
+    state = tournament.state if isinstance(tournament.state, dict) else {}
+    return TournamentListItem(
+        id=tournament.id,
+        title=tournament.title,
+        champion=tournament.champion,
+        team_count=tournament.team_count,
+        max_losses=tournament.max_losses,
+        has_grand_final_reset=tournament.has_grand_final_reset,
+        format=get_tournament_format(state),
         completed_at=tournament.completed_at,
         created_at=tournament.created_at,
         updated_at=tournament.updated_at,
@@ -733,7 +757,7 @@ def list_tournaments(
         .where(Tournament.user_id == current_user.id)
         .order_by(Tournament.updated_at.desc())
     ).all()
-    return tournaments
+    return [build_tournament_list_item(item) for item in tournaments]
 
 
 @app.post("/tournaments", response_model=TournamentOut, status_code=status.HTTP_201_CREATED)
