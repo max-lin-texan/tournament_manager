@@ -3935,13 +3935,64 @@ ${data.reset_token}`, 'success');
         URL.revokeObjectURL(url);
     }
 
+    function getReportHeroTitle() {
+        if (tournamentFormat === 'group_only') {
+            return '小組循環賽報表';
+        }
+        if (tournamentFormat === 'group_knockout') {
+            return grandChampion ? '小組賽＋淘汰賽比賽結果' : '小組賽＋淘汰賽目前進度';
+        }
+        return grandChampion ? '淘汰賽比賽結果' : '淘汰賽目前進度';
+    }
+
+    function getReportModeText() {
+        if (tournamentFormat === 'group_only') return '純小組賽';
+        const modeText = describeMode(maxLosses);
+        if (tournamentFormat === 'group_knockout') return `小組＋淘汰（${modeText}）`;
+        return modeText;
+    }
+
+    function sanitizeReportClone(root) {
+        if (!root) return;
+        root.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
+        root.querySelectorAll('.result-actions, button').forEach((node) => node.remove());
+        root.querySelectorAll('input').forEach((input) => {
+            const span = document.createElement('span');
+            span.textContent = input.value || input.getAttribute('value') || '';
+            input.replaceWith(span);
+        });
+        root.querySelectorAll('[onclick]').forEach((node) => node.removeAttribute('onclick'));
+        root.querySelectorAll('h3').forEach((node) => {
+            node.textContent = String(node.textContent || '').replace(/（直接點[^）]*）/g, '');
+        });
+    }
+
+    function cloneSectionForReport(elementId) {
+        const source = document.getElementById(elementId);
+        if (!source || source.classList.contains('hidden')) return '';
+        const clone = source.cloneNode(true);
+        clone.classList.remove('hidden');
+        sanitizeReportClone(clone);
+        return clone.outerHTML;
+    }
+
+    function cloneGroupSummaryForReport() {
+        const source = document.getElementById('group-summary');
+        if (!source || source.classList.contains('hidden') || !source.innerText.trim()) return '';
+        return `<div class="group-summary report-section">${escapeHtml(source.innerText)}</div>`;
+    }
+
     function buildTournamentReportHtml() {
         const generatedAt = formatLocalDateTime(new Date());
         const baseStyle = document.querySelector('style')?.textContent || '';
-        const bracketSnapshot = buildBracketSnapshotHtml();
-        const leaderboardSnapshot = buildLeaderboardSnapshotHtml();
-        const matchRecords = buildMatchRecordsTableHtml();
-        const modeText = describeMode(maxLosses);
+        const groupSummary = cloneGroupSummaryForReport();
+        const groupSection = cloneSectionForReport('group-leaderboard-section');
+        const knockoutSection = cloneSectionForReport('knockout-leaderboard-section');
+        const bracketSnapshot = tournamentFormat === 'group_only' ? '' : buildBracketSnapshotHtml();
+        const matchRecords = tournamentFormat === 'group_only' ? '' : buildMatchRecordsTableHtml();
+        const modeText = getReportModeText();
+        const showKnockoutMeta = tournamentFormat !== 'group_only';
+        const showChampion = tournamentFormat !== 'group_only';
 
         return `<!DOCTYPE html>
 <html lang="zh-TW">
@@ -3975,7 +4026,6 @@ ${baseStyle}
         .report-section { margin-bottom: 20px; }
         .report-section-title { margin: 0 0 10px; font-size: 1.05rem; color: #fff; }
         .report-snapshot .arena-wrapper { margin-bottom: 0; }
-        .report-snapshot .result-actions, .report-snapshot .win-btn, .report-snapshot button { display: none !important; }
         .report-match-table {
             width: 100%;
             border-collapse: collapse;
@@ -3997,64 +4047,50 @@ ${baseStyle}
 <body class="report-body">
     <div class="report-page">
         <section class="report-hero">
-            <h1 class="report-title">${grandChampion ? '淘汰賽比賽結果' : '淘汰賽目前進度'}</h1>
-            <div class="report-champion">🏆 總冠軍：${escapeHtml(grandChampion || '尚未產生')}</div>
+            <h1 class="report-title">${getReportHeroTitle()}</h1>
+            ${showChampion ? `<div class="report-champion">🏆 總冠軍：${escapeHtml(grandChampion || '尚未產生')}</div>` : ''}
             <div class="report-meta">
                 <span>總隊伍數：${getTotalTeamCount()} 隊</span>
-                <span>淘汰機制：${modeText}</span>
-                ${maxLosses === 2 ? `<span>是否有重賽：${hasGrandFinalReset ? '是' : '否'}</span>` : ''}
-                ${byeCount > 0 ? `<span>賽程格數：${bracketSize} 格 / ${byeCount} 輪空</span>` : ''}
+                <span>賽程模式：${modeText}</span>
+                ${showKnockoutMeta && maxLosses === 2 ? `<span>是否有重賽：${hasGrandFinalReset ? '是' : '否'}</span>` : ''}
+                ${showKnockoutMeta && byeCount > 0 ? `<span>賽程格數：${bracketSize} 格 / ${byeCount} 輪空</span>` : ''}
                 <span>產生時間：${escapeHtml(generatedAt)}</span>
             </div>
         </section>
-        <section class="report-section report-snapshot">
-            <h2 class="report-section-title">完整樹狀賽程圖</h2>
-            ${bracketSnapshot}
-        </section>
-        <section class="report-section">
-            <h2 class="report-section-title">最終排行榜</h2>
-            ${leaderboardSnapshot}
-        </section>
-        <section class="report-section">
-            <h2 class="report-section-title">已完成對戰紀錄</h2>
-            ${matchRecords}
-        </section>
+        ${groupSummary}
+        ${groupSection}
+        ${knockoutSection}
+        ${bracketSnapshot ? `<section class="report-section report-snapshot">${bracketSnapshot}</section>` : ''}
+        ${matchRecords ? `<section class="report-section"><h2 class="report-section-title">已完成對戰紀錄</h2>${matchRecords}</section>` : ''}
     </div>
 </body>
 </html>`;
     }
 
     function buildBracketSnapshotHtml() {
-        const source = document.querySelector('.arena-wrapper');
-        if (!source) return '<div class="report-empty">找不到賽程圖。</div>';
+        const source = document.getElementById('arena-wrapper');
+        if (!source || source.classList.contains('hidden')) {
+            return '<div class="report-empty">此賽程沒有淘汰賽樹狀圖。</div>';
+        }
 
         const clone = source.cloneNode(true);
+        sanitizeReportClone(clone);
+
         const sourceCanvas = document.getElementById('pyramid-canvas');
-        const cloneCanvas = clone.querySelector('#pyramid-canvas');
-
-        clone.querySelectorAll('.result-actions, button').forEach((node) => node.remove());
-        clone.querySelectorAll('input').forEach((input) => {
-            const span = document.createElement('span');
-            span.innerText = input.value || input.getAttribute('value') || '';
-            input.replaceWith(span);
-        });
-
+        const cloneCanvas = clone.querySelector('.pyramid-container');
         if (sourceCanvas && cloneCanvas) {
             const rect = sourceCanvas.getBoundingClientRect();
             cloneCanvas.style.width = `${Math.ceil(rect.width)}px`;
             cloneCanvas.style.minWidth = `${Math.ceil(rect.width)}px`;
             cloneCanvas.style.minHeight = `${Math.ceil(rect.height)}px`;
+            const cloneSvg = cloneCanvas.querySelector('svg');
+            if (cloneSvg) {
+                cloneSvg.setAttribute('viewBox', `0 0 ${rect.width} ${rect.height}`);
+                cloneSvg.setAttribute('width', String(rect.width));
+                cloneSvg.setAttribute('height', String(rect.height));
+            }
         }
 
-        return clone.outerHTML;
-    }
-
-    function buildLeaderboardSnapshotHtml() {
-        const source = document.querySelector('.leaderboard-section');
-        if (!source) return '<div class="report-empty">找不到排行榜。</div>';
-        const clone = source.cloneNode(true);
-        clone.style.maxHeight = 'none';
-        clone.style.overflow = 'visible';
         return clone.outerHTML;
     }
 
