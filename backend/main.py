@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 import re
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -48,11 +50,19 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+INDEX_HTML = FRONTEND_DIR / "index.html"
 
 
 ADMIN_ROLES = {"admin", "super_admin"}
@@ -824,3 +834,10 @@ def delete_tournament(
     db.delete(tournament)
     db.commit()
     return {"deleted": True}
+
+
+@app.get("/", include_in_schema=False)
+def serve_frontend():
+    if not INDEX_HTML.is_file():
+        raise HTTPException(status_code=404, detail="Frontend not found")
+    return FileResponse(INDEX_HTML)

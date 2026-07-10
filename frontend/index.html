@@ -1064,13 +1064,13 @@
         hasGrandFinalReset: false,
     };
 
-    // Local frontend uses local API; Netlify/production uses Heroku API.
+    // Local dev (Vite) calls local API; production on Heroku uses same origin.
     const API_BASE_URL = (() => {
         const host = window.location.hostname;
         if (host === 'localhost' || host === '127.0.0.1') {
             return 'http://127.0.0.1:8000';
         }
-        return 'https://tournament-manager-6944330ef027.herokuapp.com';
+        return window.location.origin;
     })();
     let authToken = localStorage.getItem('tm_access_token') || null;
     let currentUser = null;
