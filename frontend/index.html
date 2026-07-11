@@ -1372,8 +1372,33 @@
 
     function getKnockoutEntrantCount() {
         if (tournamentFormat !== 'group_knockout') return teamCount;
-        const qualified = deriveQualifiedTeams(groupStageData);
-        return qualified.length >= 2 ? qualified.length : Math.max(2, qualified.length);
+        return Math.max(2, getAppliedQualifiedCount() || 2);
+    }
+
+    function getGroupNamesWithResults(groupData = groupStageData) {
+        const groups = new Set();
+        (groupData?.results || []).forEach((result) => {
+            const groupName = String(result?.group || '').trim();
+            if (groupName) groups.add(groupName);
+        });
+        return groups;
+    }
+
+    function deriveQualifiedTeamsForSync(groupData = groupStageData) {
+        const groupsWithResults = getGroupNamesWithResults(groupData);
+        if (!groupsWithResults.size) return [];
+
+        const winsByGroup = getGroupWinsMap(groupData.matches, groupData.results);
+        const goalsByGroup = getGroupGoalStatsByGroup(groupData.matches, groupData.results);
+        const qualified = [];
+        (groupData.groups || []).forEach((group) => {
+            if (!groupsWithResults.has(group.name)) return;
+            const ranked = rankGroupTeams(group.teams, group.name, groupData, winsByGroup, goalsByGroup);
+            const topNRule = (groupData.advanceRules || []).find((item) => item.group === group.name);
+            const topN = Math.max(1, Number(topNRule?.top_n || 1));
+            qualified.push(...ranked.slice(0, topN));
+        });
+        return qualified;
     }
 
     function flashButton(buttonId) {
@@ -1553,8 +1578,8 @@
     }
 
     function applyKnockoutConfigOnly(selectedMaxLosses, selectedHasReset) {
-        const qualified = deriveQualifiedTeams(groupStageData);
-        if (selectedMaxLosses === 2 && !isPowerOfTwo(qualified.length)) {
+        const slotCount = getAppliedQualifiedCount() || 0;
+        if (selectedMaxLosses === 2 && !isPowerOfTwo(slotCount)) {
             return { ok: false, error: '晉級隊伍數不是 2 的次方，復賽不可選雙敗。' };
         }
 
@@ -1569,7 +1594,7 @@
         };
         document.getElementById('reset-select').value = String(hasGrandFinalReset);
 
-        return rebuildKnockoutFromGroupQualifiedTeams();
+        return rebuildKnockoutBracketStructure();
     }
 
     function applyGroupStageSettingsUpdate(next, preservation) {
@@ -1601,15 +1626,19 @@
         return { ok: true, preservedResults: true, renamed: false };
     }
 
-    function rebuildKnockoutFromGroupQualifiedTeams() {
+    function rebuildKnockoutBracketStructure(options = {}) {
+        const { force = false } = options;
         if (tournamentFormat !== 'group_knockout') return { ok: true, skipped: true };
 
-        const qualified = deriveQualifiedTeams(groupStageData);
-        if (qualified.length < 2) {
-            return { ok: false, error: '小組賽＋淘汰賽模式至少需要 2 支晉級隊伍。' };
+        const slotCount = getAppliedQualifiedCount() || 0;
+        if (slotCount < 2) {
+            return { ok: false, error: '小組賽＋淘汰賽模式至少需要 2 支晉級名額。' };
         }
-        if (maxLosses === 2 && !isPowerOfTwo(qualified.length)) {
+        if (maxLosses === 2 && !isPowerOfTwo(slotCount)) {
             return { ok: false, error: '晉級隊伍數不是 2 的次方，復賽不可選雙敗。' };
+        }
+        if (!force && hasOpeningRoundStarted()) {
+            return { ok: false, error: '開幕輪已開始比賽，無法變更淘汰賽結構。' };
         }
 
         tournamentData = {};
@@ -1619,11 +1648,10 @@
         loserRoutes = {};
         matchOrder = [];
         columns = { winners: [], losers: [] };
-        teamNames = [...qualified];
+        teamNames = [];
         teamCount = Number(groupStageData.totalTeams || teamCount);
-        bracketSize = getBracketSizeFor(teamNames.length, maxLosses);
-        byeCount = getByeCountFor(teamNames.length, maxLosses);
-        teamNames.forEach((name) => { teamStats[name] = { w: 0, l: 0, gf: 0, ga: 0, out: false }; });
+        bracketSize = getBracketSizeFor(slotCount, maxLosses);
+        byeCount = getByeCountFor(slotCount, maxLosses);
         syncArenaTitle();
 
         const canvas = document.getElementById('pyramid-canvas');
@@ -1632,22 +1660,99 @@
         document.getElementById('knockout-leaderboard-section')?.classList.remove('hidden');
         buildTopology();
         seedOpeningRound();
+        const syncResult = syncOpeningRoundFromQualified();
         resolveAutomaticByes();
         renderTree();
         recalculateStats();
-        return { ok: true, rebuilt: true };
+        return { ok: true, rebuilt: true, synced: syncResult.synced };
+    }
+
+    function isOpeningRoundReadyForByes() {
+        if (tournamentFormat !== 'group_knockout') return true;
+        const qualified = deriveQualifiedTeamsForSync(groupStageData);
+        const projected = getAppliedQualifiedCount() || 0;
+        if (qualified.length < projected) return false;
+        const groupsWithResults = getGroupNamesWithResults(groupStageData);
+        return (groupStageData.groups || []).every((group) => groupsWithResults.has(group.name));
+    }
+
+    function clearPrematureOpeningRoundByeResults() {
+        if (tournamentFormat !== 'group_knockout' || isOpeningRoundReadyForByes()) return;
+        Object.keys(tournamentData).forEach((id) => {
+            if (!id.startsWith('W_R1')) return;
+            const state = tournamentData[id];
+            if (!state || !matchHasBye(id) || state.winner === null) return;
+            cancelMatchResult(id);
+        });
+    }
+    function syncOpeningRoundFromQualified() {
+        if (tournamentFormat !== 'group_knockout') return { ok: true, synced: false };
+        if (hasOpeningRoundStarted()) return { ok: true, synced: false, locked: true };
+
+        const qualified = deriveQualifiedTeamsForSync(groupStageData);
+        const qualifiedSet = new Set(qualified);
+
+        Object.keys(tournamentData).forEach((id) => {
+            if (!id.startsWith('W_R1')) return;
+            const state = tournamentData[id];
+            if (!state) return;
+            [1, 2].forEach((slotNum) => {
+                const slotKey = `slot${slotNum}`;
+                const value = state[slotKey];
+                if (value && value !== '__BYE__' && !qualifiedSet.has(value)) {
+                    state[slotKey] = '';
+                    clearOpeningRoundByeResultIfNeeded(id);
+                }
+            });
+        });
+
+        const alreadyPlaced = getOpeningRoundTeamNames();
+        const toPlace = qualified.filter((name) => !alreadyPlaced.has(name));
+        const emptySlots = [];
+        Object.keys(tournamentData)
+            .sort((a, b) => naturalCompare(a, b))
+            .forEach((id) => {
+                if (!id.startsWith('W_R1')) return;
+                const state = tournamentData[id];
+                if (!state) return;
+                [1, 2].forEach((slotNum) => {
+                    const slotKey = `slot${slotNum}`;
+                    if (state[slotKey] === '__BYE__') return;
+                    if (!state[slotKey]) emptySlots.push({ id, slotNum });
+                });
+            });
+
+        toPlace.forEach((name, index) => {
+            const slot = emptySlots[index];
+            if (!slot) return;
+            tournamentData[slot.id][`slot${slot.slotNum}`] = name;
+        });
+
+        qualified.forEach((name) => {
+            if (!teamStats[name]) {
+                teamStats[name] = { w: 0, l: 0, gf: 0, ga: 0, out: false };
+            }
+        });
+        syncTeamNamesOrderFromOpeningRound();
+        clearPrematureOpeningRoundByeResults();
+        resolveAutomaticByes();
+        return { ok: true, synced: true };
     }
 
     function refreshKnockoutAfterGroupSettingsUpdate(preservation) {
         if (tournamentFormat !== 'group_knockout') return { ok: true, skipped: true };
         if (preservation.onlyTopNChanged) {
-            return rebuildKnockoutFromGroupQualifiedTeams();
+            return rebuildKnockoutBracketStructure();
         }
         if (preservation.renameMap) {
+            syncOpeningRoundFromQualified();
             resolveAutomaticByes();
             recalculateStats();
             renderTree();
             return { ok: true, renamed: true };
+        }
+        if (!preservation.canPreserveResults) {
+            return rebuildKnockoutBracketStructure();
         }
         return { ok: true, skipped: true };
     }
@@ -1681,6 +1786,7 @@
             groupStageData.matches = buildGroupMatches(groupStageData.groups, groupStageData.cycles);
             groupStageData.results = [];
             renderGroupSection();
+            if (tournamentFormat === 'group_knockout') handleGroupQualificationChange();
             showToast('循環設定已更新並重建小組賽程。', 'success', 1400);
         }
         groupWizardStep = Math.max(groupWizardStep, 2);
@@ -1725,20 +1831,23 @@
         groupStageData.cycles = nextCycles;
         groupStageData.distribution = nextDistribution;
         groupStageData.advanceRules = nextAdvanceRules;
-        if (hasExistingGroupData && step2StructureChanged) groupStageData.results = [];
+        if (hasExistingGroupData && step2StructureChanged) {
+            groupStageData.results = [];
+            if (tournamentFormat === 'group_knockout') handleGroupQualificationChange();
+        }
         groupWizardStep = Math.max(groupWizardStep, 3);
         refreshGroupWizardUI();
         updatePendingSettingsUI();
         flashButton('group-step-2-confirm');
         if (onlyTopNChanged && !step2StructureChanged) {
             renderGroupSection();
-            const knockoutResult = rebuildKnockoutFromGroupQualifiedTeams();
+            const knockoutResult = rebuildKnockoutBracketStructure();
             if (knockoutResult && !knockoutResult.ok) {
                 alert(knockoutResult.error);
                 return;
             }
             if (tournamentFormat === 'group_knockout' && knockoutResult?.rebuilt) {
-                showToast('晉級名額已更新，小組賽賽果已保留，淘汰賽已依最新晉級名單重建。', 'success', 2200);
+                showToast('晉級名額已更新，小組賽賽果已保留，淘汰賽已同步。', 'success', 2200);
             } else {
                 showToast('晉級名額已更新，小組賽賽果已保留。', 'success', 1600);
             }
@@ -1804,6 +1913,7 @@
                 groupStageData.results = [];
                 groupWizardStep = 4;
                 renderGroupSection();
+                if (tournamentFormat === 'group_knockout') handleGroupQualificationChange();
                 updatePendingSettingsUI();
                 refreshGroupWizardUI();
                 flashButton('group-step-3-confirm');
@@ -1829,7 +1939,10 @@
             refreshKnockoutAfterGroupSettingsUpdate({ renameMap });
         } else {
             groupStageData.matches = buildGroupMatches(groups, groupStageData.cycles);
-            if (step3Changed) groupStageData.results = [];
+            if (step3Changed) {
+                groupStageData.results = [];
+                if (tournamentFormat === 'group_knockout') handleGroupQualificationChange();
+            }
         }
         groupWizardStep = 4;
         renderGroupSection();
@@ -2536,17 +2649,38 @@
         if (tournamentFormat !== 'group_knockout') {
             return { inconsistent: false, disqualified: [], missing: [], locked: false };
         }
-        const qualified = deriveQualifiedTeams(groupStageData);
+        const qualified = deriveQualifiedTeamsForSync(groupStageData);
         const qualifiedSet = new Set(qualified);
         const knockoutTeams = [...getOpeningRoundTeamNames()];
         const disqualified = knockoutTeams.filter((name) => !qualifiedSet.has(name));
         const missing = qualified.filter((name) => !knockoutTeams.includes(name));
+        const locked = hasOpeningRoundStarted();
         return {
             inconsistent: disqualified.length > 0 || missing.length > 0,
             disqualified,
             missing,
-            locked: hasOpeningRoundStarted(),
+            locked,
         };
+    }
+
+    function promptRebuildKnockoutFromQualified() {
+        if (adminReadOnlyMode) return { ok: false, cancelled: true };
+        const status = getKnockoutQualificationStatus();
+        if (!status.inconsistent) return { ok: true, skipped: true };
+        if (!confirm('這會清除淘汰賽結果並依新晉級名單重建。確定要繼續？')) {
+            return { ok: false, cancelled: true };
+        }
+        const result = rebuildKnockoutBracketStructure({ force: true });
+        if (!result.ok) {
+            alert(result.error || '無法重建淘汰賽。');
+            return result;
+        }
+        syncArenaTitle();
+        renderTree();
+        recalculateStats();
+        renderGroupQualificationSummary();
+        showToast('已依新晉級名單重建淘汰賽。', 'success', 2000);
+        return result;
     }
 
     function renderGroupQualificationSummary() {
@@ -2580,49 +2714,50 @@
             html += `<div class="qual-warning">淘汰賽缺少晉級隊伍：${escapeHtml(status.missing.join('、'))}。</div>`;
         }
         if (status.locked) {
-            html += '<div>開幕輪已開始比賽，隊伍位置已鎖定；請調整小組戰績或晉級規則後再儲存。</div>';
-        } else if (!adminReadOnlyMode) {
-            html += '<button type="button" class="btn-secondary" onclick="confirmRebuildKnockoutFromQualified()">依最新晉級名單重建淘汰賽開幕輪</button>';
+            html += '<div>晉級名單已變更，與淘汰賽不一致。</div>';
+            if (!adminReadOnlyMode) {
+                html += '<button type="button" class="btn-secondary" onclick="promptRebuildKnockoutFromQualified()">依新晉級名單重建淘汰賽</button>';
+            }
         }
         summary.classList.remove('hidden');
         summary.innerHTML = html;
     }
 
     function handleGroupQualificationChange() {
+        if (tournamentFormat === 'group_knockout' && !hasOpeningRoundStarted()) {
+            syncOpeningRoundFromQualified();
+            syncArenaTitle();
+            renderTreePreserveScroll();
+            recalculateStats();
+        } else if (tournamentFormat === 'group_knockout' && !adminReadOnlyMode) {
+            const status = getKnockoutQualificationStatus();
+            if (status.inconsistent && status.locked) {
+                promptRebuildKnockoutFromQualified();
+            }
+        }
         renderGroupQualificationSummary();
-    }
-
-    function confirmRebuildKnockoutFromQualified() {
-        if (adminReadOnlyMode) return;
-        const status = getKnockoutQualificationStatus();
-        if (status.locked) {
-            showToast('開幕輪已開始比賽，無法重建。', 'error', 2200);
-            return;
-        }
-        if (!confirm('會依最新晉級名單重建淘汰賽開幕輪，現有對位將被清除。確定要繼續？')) return;
-        const result = rebuildKnockoutFromGroupQualifiedTeams();
-        if (!result.ok) {
-            alert(result.error || '無法重建淘汰賽。');
-            return;
-        }
-        renderGroupSection();
-        showToast('已依最新晉級名單重建淘汰賽開幕輪。', 'success', 2000);
     }
 
     function validateKnockoutEntrantsBeforeSave() {
         if (tournamentFormat !== 'group_knockout') return { ok: true };
+        if (!hasOpeningRoundStarted()) {
+            syncOpeningRoundFromQualified();
+        }
         const status = getKnockoutQualificationStatus();
         if (!status.inconsistent) return { ok: true };
+        if (status.locked) {
+            return {
+                ok: false,
+                message: '晉級名單與淘汰賽不一致。請確認依新晉級名單重建淘汰賽後再儲存。',
+            };
+        }
         if (status.disqualified.length) {
             return {
                 ok: false,
-                message: `淘汰賽含有未晉級隊伍：${status.disqualified.join('、')}。請調整戰績／晉級規則，或重建淘汰賽開幕輪。`,
+                message: `淘汰賽含有未晉級隊伍：${status.disqualified.join('、')}。請調整小組戰績或晉級規則。`,
             };
         }
-        return {
-            ok: false,
-            message: `淘汰賽缺少晉級隊伍：${status.missing.join('、')}。請重建淘汰賽開幕輪或調整對位。`,
-        };
+        return { ok: true };
     }
 
     function getGroupResultByMatchId(matchId) {
@@ -3793,9 +3928,9 @@ ${data.reset_token}`, 'success');
             groupStageData.totalTeams = inferredTotal;
         }
         if (tournamentFormat === 'group_knockout') {
-            const knockoutTeams = Math.max(2, (teamNames || []).length);
-            bracketSize = state.bracketSize || getBracketSizeFor(knockoutTeams, maxLosses);
-            byeCount = state.byeCount ?? getByeCountFor(knockoutTeams, maxLosses);
+            const knockoutSlots = Math.max(2, getAppliedQualifiedCount() || (teamNames || []).length || 2);
+            bracketSize = state.bracketSize || getBracketSizeFor(knockoutSlots, maxLosses);
+            byeCount = state.byeCount ?? getByeCountFor(knockoutSlots, maxLosses);
         }
         lastAppliedTopSettings = {
             teamCount,
@@ -3832,6 +3967,9 @@ ${data.reset_token}`, 'success');
             columns = { winners: [], losers: [] };
             buildTopology();
             seedOpeningRound();
+            if (tournamentFormat === 'group_knockout') {
+                syncOpeningRoundFromQualified();
+            }
             resolveAutomaticByes();
         }
 
@@ -3869,6 +4007,18 @@ ${data.reset_token}`, 'success');
         if (adminReadOnlyMode) {
             showToast('管理唯讀模式下不可儲存。', 'error');
             return;
+        }
+        if (tournamentFormat === 'group_knockout') {
+            const status = getKnockoutQualificationStatus();
+            if (status.inconsistent && status.locked) {
+                const rebuildResult = promptRebuildKnockoutFromQualified();
+                if (!rebuildResult.ok) {
+                    if (rebuildResult.cancelled) {
+                        showToast('請先確認是否依新晉級名單重建淘汰賽，再儲存。', 'error', 4200);
+                    }
+                    return;
+                }
+            }
         }
         const saveValidation = validateKnockoutEntrantsBeforeSave();
         if (!saveValidation.ok) {
@@ -4318,7 +4468,7 @@ ${data.reset_token}`, 'success');
             }
             updatePendingSettingsUI();
             renderGroupSection();
-            showToast('淘汰機制已更新，小組賽賽果已保留，淘汰賽已重建。', 'success', 2200);
+            showToast('淘汰機制已更新，小組賽賽果已保留，淘汰賽已同步。', 'success', 2200);
             return;
         }
 
@@ -4373,7 +4523,7 @@ ${data.reset_token}`, 'success');
             updatePendingSettingsUI();
             renderGroupSection();
             if (preservation.onlyTopNChanged && tournamentFormat === 'group_knockout') {
-                showToast('設定已更新，小組賽賽果已保留，淘汰賽已依最新晉級名單重建。', 'success', 2200);
+                showToast('設定已更新，小組賽賽果已保留，淘汰賽已同步。', 'success', 2200);
             } else {
                 showToast('設定已更新，小組賽賽果已保留。', 'success', 1800);
             }
@@ -4392,16 +4542,18 @@ ${data.reset_token}`, 'success');
             advanceRules,
             tiebreakOrder: getTiebreakOrder(),
         };
-        const autoQualified = deriveQualifiedTeams(groupStageData);
-        const entrantsToUse = autoQualified;
+        const projectedQualified = getAppliedQualifiedCount() || distributionResult.distribution.reduce(
+            (sum, item) => sum + Number(item.topN || 0),
+            0
+        );
         teamCount = selectedGroupTotalTeams;
         groupStageData.totalTeams = selectedGroupTotalTeams;
         if (selectedFormat === 'group_knockout') {
-            if (entrantsToUse.length < 2) {
-                alert('小組賽＋淘汰賽模式至少需要 2 支晉級隊伍。');
+            if (projectedQualified < 2) {
+                alert('小組賽＋淘汰賽模式至少需要 2 支晉級名額。');
                 return;
             }
-            if (maxLosses === 2 && !isPowerOfTwo(entrantsToUse.length)) {
+            if (maxLosses === 2 && !isPowerOfTwo(projectedQualified)) {
                 alert('晉級隊伍數不是 2 的次方，復賽不可選雙敗。');
                 return;
             }
@@ -4411,15 +4563,6 @@ ${data.reset_token}`, 'success');
         }
         document.getElementById('reset-select').value = String(hasGrandFinalReset);
         initTournament();
-        if (selectedFormat === 'group_knockout') {
-            teamNames = [...entrantsToUse];
-            teamStats = {};
-            teamNames.forEach((name) => { teamStats[name] = { w: 0, l: 0, out: false }; });
-            seedOpeningRound();
-            resolveAutomaticByes();
-            renderTree();
-            recalculateStats();
-        }
         updatePendingSettingsUI();
         renderGroupSection();
     }
@@ -4428,8 +4571,7 @@ ${data.reset_token}`, 'success');
         tournamentData = {};
         teamStats = {};
         if (tournamentFormat === 'group_knockout') {
-            const autoQualified = deriveQualifiedTeams(groupStageData);
-            teamNames = autoQualified.length >= 2 ? [...autoQualified] : ['Team 1', 'Team 2'];
+            teamNames = [];
             teamCount = Number(groupStageData.totalTeams || teamCount);
         } else if (tournamentFormat === 'group_only') {
             teamCount = Number(groupStageData.totalTeams || teamCount);
@@ -4442,7 +4584,9 @@ ${data.reset_token}`, 'success');
         loserRoutes = {};
         matchOrder = [];
         columns = { winners: [], losers: [] };
-        const knockoutTeams = tournamentFormat === 'group_knockout' ? teamNames.length : teamCount;
+        const knockoutTeams = tournamentFormat === 'group_knockout'
+            ? Math.max(2, getAppliedQualifiedCount() || 2)
+            : teamCount;
         bracketSize = getBracketSizeFor(knockoutTeams, maxLosses);
         byeCount = getByeCountFor(knockoutTeams, maxLosses);
 
@@ -4462,6 +4606,9 @@ ${data.reset_token}`, 'success');
         document.getElementById('knockout-leaderboard-section').classList.remove('hidden');
         buildTopology();
         seedOpeningRound();
+        if (tournamentFormat === 'group_knockout') {
+            syncOpeningRoundFromQualified();
+        }
         resolveAutomaticByes();
         renderTree();
         recalculateStats();
@@ -4896,7 +5043,7 @@ ${data.reset_token}`, 'success');
 
     function getKnockoutEntrantPool() {
         if (tournamentFormat === 'group_knockout') {
-            return deriveQualifiedTeams(groupStageData);
+            return deriveQualifiedTeamsForSync(groupStageData);
         }
         return [...teamNames];
     }
@@ -4931,7 +5078,10 @@ ${data.reset_token}`, 'success');
                     }
                 });
             });
-        if (!ordered.length) return;
+        if (!ordered.length) {
+            teamNames = [];
+            return;
+        }
         ordered.forEach((teamName) => {
             if (!teamStats[teamName]) {
                 teamStats[teamName] = { w: 0, l: 0, gf: 0, ga: 0, out: false };
@@ -5215,6 +5365,7 @@ ${data.reset_token}`, 'success');
             matchOrder.forEach((id) => {
                 const state = tournamentData[id];
                 if (!state || state.winner !== null) return;
+                if (id.startsWith('W_R1') && !isOpeningRoundReadyForByes()) return;
 
                 const slot1 = state.slot1;
                 const slot2 = state.slot2;

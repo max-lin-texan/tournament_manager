@@ -321,6 +321,12 @@ def validate_group_knockout_state(state: dict, mode: str) -> None:
         raise HTTPException(status_code=422, detail="Sum of group team sizes must equal group_stage.total_teams")
 
     if mode == "group_knockout":
+        results = group_stage.get("results") or []
+        groups_with_results = {
+            str(result.get("group") or "").strip()
+            for result in results
+            if str(result.get("group") or "").strip()
+        }
         for rule in advance_rules:
             group_name = str(rule.get("group") or "").strip()
             top_n = int(rule.get("top_n") or 0)
@@ -331,6 +337,8 @@ def validate_group_knockout_state(state: dict, mode: str) -> None:
                 raise HTTPException(status_code=422, detail=f"advance_rules for {group_name} must have top_n >= 1")
             if top_n > len(ranked):
                 raise HTTPException(status_code=422, detail=f"advance_rules for {group_name} exceeds group team count")
+            if group_name not in groups_with_results:
+                continue
             qualified_set.update(ranked[:top_n])
 
     if mode != "group_knockout" or not entrants:
@@ -378,7 +386,9 @@ def validate_group_knockout_state(state: dict, mode: str) -> None:
             )
 
     max_losses = int(knockout_stage.get("max_losses") or 1)
-    if max_losses == 2 and not is_power_of_two(len(entrants)):
+    projected_qualifiers = sum(int(rule.get("top_n") or 0) for rule in advance_rules)
+    bracket_entrant_count = projected_qualifiers if projected_qualifiers >= 2 else len(entrants)
+    if max_losses == 2 and bracket_entrant_count and not is_power_of_two(bracket_entrant_count):
         raise HTTPException(
             status_code=422,
             detail="Double elimination in knockout stage requires entrant count to be a power of two",
