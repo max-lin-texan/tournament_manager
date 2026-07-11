@@ -89,9 +89,127 @@ def get_tournament_format(state: dict | None) -> str:
     return state.get("format") or "single_elimination"
 
 
+TIEBREAK_KEYS = ("wins", "gd", "gf", "ga", "name")
+DEFAULT_TIEBREAK_ORDER = [
+    {"key": "wins", "enabled": True},
+    {"key": "gd", "enabled": True},
+    {"key": "gf", "enabled": True},
+    {"key": "ga", "enabled": True},
+    {"key": "name", "enabled": True},
+]
+
+
+def normalize_tiebreak_order(raw) -> list[dict]:
+    known = set(TIEBREAK_KEYS)
+    seen: set[str] = set()
+    normalized: list[dict] = []
+
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("key") or "").strip()
+            if key not in known or key in seen:
+                continue
+            seen.add(key)
+            normalized.append({"key": key, "enabled": item.get("enabled", True) is not False})
+
+    for item in DEFAULT_TIEBREAK_ORDER:
+        if item["key"] not in seen:
+            normalized.append({"key": item["key"], "enabled": True})
+
+    if not any(item.get("enabled", True) for item in normalized):
+        for item in normalized:
+            if item["key"] == "name":
+                item["enabled"] = True
+                break
+
+    return normalized
+
+
+def build_group_goal_stats(group_stage: dict) -> dict[str, dict[str, dict[str, int]]]:
+    groups = group_stage.get("groups") or []
+    matches = group_stage.get("matches") or []
+    results = group_stage.get("results") or []
+    match_map = {
+        str(match.get("id") or "").strip(): match
+        for match in matches
+        if isinstance(match, dict) and str(match.get("id") or "").strip()
+    }
+
+    stats: dict[str, dict[str, dict[str, int]]] = {}
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        group_name = str(group.get("name") or "").strip()
+        if not group_name:
+            continue
+        stats[group_name] = {}
+        for team in group.get("teams") or []:
+            team_name = str(team).strip()
+            if team_name:
+                stats[group_name][team_name] = {"gf": 0, "ga": 0}
+
+    for result in results:
+        if not isinstance(result, dict) or not result.get("winner"):
+            continue
+        match = match_map.get(str(result.get("match_id") or "").strip())
+        if not isinstance(match, dict):
+            continue
+        group_name = str(result.get("group") or match.get("group") or "").strip()
+        home = str(match.get("home") or "").strip()
+        away = str(match.get("away") or "").strip()
+        if not group_name:
+            continue
+        if group_name not in stats:
+            stats[group_name] = {}
+        for team_name in (home, away):
+            if team_name and team_name not in stats[group_name]:
+                stats[group_name][team_name] = {"gf": 0, "ga": 0}
+        home_score = int(result.get("home_score") or 0)
+        away_score = int(result.get("away_score") or 0)
+        if home in stats[group_name]:
+            stats[group_name][home]["gf"] += home_score
+            stats[group_name][home]["ga"] += away_score
+        if away in stats[group_name]:
+            stats[group_name][away]["gf"] += away_score
+            stats[group_name][away]["ga"] += home_score
+
+    return stats
+
+
+def team_tiebreak_sort_key(
+    team: str,
+    wins: dict[str, int],
+    goals: dict[str, dict[str, int]],
+    tiebreak_order: list[dict],
+) -> tuple:
+    goal = goals.get(team) or {"gf": 0, "ga": 0}
+    gf = int(goal.get("gf") or 0)
+    ga = int(goal.get("ga") or 0)
+    parts: list = []
+    for rule in tiebreak_order:
+        if not rule.get("enabled", True):
+            continue
+        key = rule.get("key")
+        if key == "wins":
+            parts.append(-wins.get(team, 0))
+        elif key == "gd":
+            parts.append(-(gf - ga))
+        elif key == "gf":
+            parts.append(-gf)
+        elif key == "ga":
+            parts.append(ga)
+        elif key == "name":
+            parts.append(natural_sort_key(team))
+    return tuple(parts)
+
+
 def build_group_rank_map(group_stage: dict) -> dict[str, list[str]]:
     groups = group_stage.get("groups") or []
     match_results = group_stage.get("results") or []
+    tiebreak_order = normalize_tiebreak_order(group_stage.get("tiebreak_order"))
+    goal_stats = build_group_goal_stats(group_stage)
     rank_map: dict[str, list[str]] = {}
 
     for group in groups:
@@ -109,7 +227,11 @@ def build_group_rank_map(group_stage: dict) -> dict[str, list[str]]:
             if winner in wins and loser in wins and winner != loser:
                 wins[winner] += 1
 
-        ranked = sorted(teams, key=lambda team: (-wins[team], natural_sort_key(team)))
+        group_goals = goal_stats.get(group_name) or {}
+        ranked = sorted(
+            teams,
+            key=lambda team: team_tiebreak_sort_key(team, wins, group_goals, tiebreak_order),
+        )
         rank_map[group_name] = ranked
     return rank_map
 

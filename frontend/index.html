@@ -204,6 +204,57 @@
             color: var(--text-muted);
             line-height: 1.5;
         }
+        .group-summary .qual-warning {
+            color: #fbbf24;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+        .tiebreak-config-panel {
+            margin-bottom: 14px;
+            padding: 12px 14px;
+            border: 1px solid var(--soft-border);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.02);
+        }
+        .tiebreak-config-panel h3 {
+            margin: 0 0 6px;
+            font-size: 0.92rem;
+        }
+        .tiebreak-hint {
+            margin: 0 0 10px;
+            font-size: 0.78rem;
+            color: var(--text-muted);
+        }
+        .tiebreak-order-list {
+            list-style: none;
+            margin: 0 0 10px;
+            padding: 0;
+            display: grid;
+            gap: 6px;
+        }
+        .tiebreak-order-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border: 1px solid var(--soft-border);
+            border-radius: 8px;
+            background: rgba(17, 24, 39, 0.55);
+            cursor: grab;
+        }
+        .tiebreak-order-item.dragging { opacity: 0.55; }
+        .tiebreak-drag-handle {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            user-select: none;
+        }
+        .tiebreak-order-item label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+            cursor: pointer;
+        }
         .knockout-hint {
             margin-top: 8px;
             text-align: center;
@@ -1093,7 +1144,7 @@
         <div id="readonly-editor-notice" class="format-note hidden">管理唯讀檢視：僅供查看與下載，不可修改賽程設定或比賽結果。</div>
         <div id="format-note" class="format-note hidden"></div>
         <div id="knockout-hint" class="knockout-hint hidden"></div>
-        <div class="hint">提示：單敗支援 2–128 隊，非 2 的次方會自動補入輪空；雙敗仍只支援 4/8/16/32/64/128 隊。選擇雙敗時可設定是否有重賽；修改隊伍數、淘汰機制或重賽設定不會立刻清空，按「套用設定並重新產生」並確認後才會重建賽程。修改第一輪隊名會自動同步後續賽程；重選勝方會清除受影響的後續結果。</div>
+        <div class="hint">提示：單敗支援 2–128 隊，非 2 的次方會自動補入輪空；雙敗仍只支援 4/8/16/32/64/128 隊。選擇雙敗時可設定是否有重賽；修改隊伍數、淘汰機制或重賽設定不會立刻清空，按「套用設定並重新產生」並確認後才會重建賽程。單純淘汰賽可隨時修改隊名並同步整個賽程；小組＋淘汰僅能在開幕輪開始前對調晉級隊伍位置。重選勝方會清除受影響的後續結果。</div>
         <div id="group-config-panel" class="group-config-panel hidden">
             <div class="group-step">
                 <div class="group-step-title">Step 1：設定總隊伍數與小組數</div>
@@ -1182,6 +1233,7 @@
         matches: [],
         results: [],
         advanceRules: [],
+        tiebreakOrder: null,
     };
     let groupWizardStep = 1;
     let groupEditModeUnlocked = true;
@@ -2111,6 +2163,276 @@
         return lossesByGroup;
     }
 
+    const TIEBREAK_LABELS = {
+        wins: '勝場',
+        gd: '得失分差',
+        gf: '得分',
+        ga: '失分',
+        name: '隊名字元排序',
+    };
+
+    const DEFAULT_TIEBREAK_ORDER = [
+        { key: 'wins', enabled: true },
+        { key: 'gd', enabled: true },
+        { key: 'gf', enabled: true },
+        { key: 'ga', enabled: true },
+        { key: 'name', enabled: true },
+    ];
+
+    function normalizeTiebreakOrder(raw) {
+        const known = new Set(Object.keys(TIEBREAK_LABELS));
+        const seen = new Set();
+        const normalized = [];
+        (Array.isArray(raw) ? raw : []).forEach((item) => {
+            const key = item?.key;
+            if (!known.has(key) || seen.has(key)) return;
+            seen.add(key);
+            normalized.push({ key, enabled: item?.enabled !== false });
+        });
+        DEFAULT_TIEBREAK_ORDER.forEach((item) => {
+            if (!seen.has(item.key)) normalized.push({ ...item });
+        });
+        if (!normalized.some((item) => item.enabled)) {
+            const nameRule = normalized.find((item) => item.key === 'name');
+            if (nameRule) nameRule.enabled = true;
+        }
+        return normalized;
+    }
+
+    function getTiebreakOrder(groupData = groupStageData) {
+        return normalizeTiebreakOrder(groupData?.tiebreakOrder);
+    }
+
+    function getActiveTiebreakOrder(groupData = groupStageData) {
+        return getTiebreakOrder(groupData).filter((item) => item.enabled);
+    }
+
+    function describeTiebreakRules(groupData = groupStageData) {
+        return getActiveTiebreakOrder(groupData).map((item) => TIEBREAK_LABELS[item.key]).join(' → ');
+    }
+
+    function compareTeamsByTiebreak(a, b, wins, goals, groupData = groupStageData) {
+        const order = getActiveTiebreakOrder(groupData);
+        const goalA = goals[a] || { gf: 0, ga: 0 };
+        const goalB = goals[b] || { gf: 0, ga: 0 };
+        for (const rule of order) {
+            let diff = 0;
+            switch (rule.key) {
+                case 'wins':
+                    diff = (wins[b] || 0) - (wins[a] || 0);
+                    break;
+                case 'gd':
+                    diff = (goalB.gf - goalB.ga) - (goalA.gf - goalA.ga);
+                    break;
+                case 'gf':
+                    diff = (goalB.gf || 0) - (goalA.gf || 0);
+                    break;
+                case 'ga':
+                    diff = (goalA.ga || 0) - (goalB.ga || 0);
+                    break;
+                case 'name':
+                    diff = naturalCompare(a, b);
+                    break;
+                default:
+                    break;
+            }
+            if (diff !== 0) return diff;
+        }
+        return 0;
+    }
+
+    function rankGroupTeams(teams, groupName, groupData, winsByGroup, goalsByGroup) {
+        const wins = winsByGroup[groupName] || {};
+        const goals = goalsByGroup[groupName] || {};
+        return [...teams].sort((a, b) => compareTeamsByTiebreak(a, b, wins, goals, groupData));
+    }
+
+    function setTiebreakRuleEnabled(key, enabled) {
+        if (adminReadOnlyMode) return;
+        const order = getTiebreakOrder();
+        const item = order.find((entry) => entry.key === key);
+        if (!item) return;
+        item.enabled = enabled;
+        if (!order.some((entry) => entry.enabled)) {
+            const nameRule = order.find((entry) => entry.key === 'name');
+            if (nameRule) nameRule.enabled = true;
+            showToast('至少需要保留一項比較規則，已自動保留「隊名字元排序」。', 'info', 2200);
+        }
+        groupStageData.tiebreakOrder = order;
+        renderGroupSection();
+        handleGroupQualificationChange();
+    }
+
+    function reorderTiebreakRule(dragKey, targetKey) {
+        if (adminReadOnlyMode || !dragKey || !targetKey || dragKey === targetKey) return;
+        const order = getTiebreakOrder();
+        const fromIdx = order.findIndex((entry) => entry.key === dragKey);
+        const toIdx = order.findIndex((entry) => entry.key === targetKey);
+        if (fromIdx < 0 || toIdx < 0) return;
+        const [item] = order.splice(fromIdx, 1);
+        order.splice(toIdx, 0, item);
+        groupStageData.tiebreakOrder = order;
+        renderGroupSection();
+        handleGroupQualificationChange();
+    }
+
+    function resetTiebreakOrderToDefault() {
+        if (adminReadOnlyMode) return;
+        groupStageData.tiebreakOrder = DEFAULT_TIEBREAK_ORDER.map((item) => ({ ...item }));
+        renderGroupSection();
+        handleGroupQualificationChange();
+        showToast('已還原預設晉級比較順序。', 'success', 1600);
+    }
+
+    function renderTiebreakConfigPanel() {
+        const canEdit = !adminReadOnlyMode;
+        const order = getTiebreakOrder();
+        const items = order.map((item) => `
+            <li class="tiebreak-order-item" data-key="${item.key}" draggable="${canEdit ? 'true' : 'false'}">
+                <span class="tiebreak-drag-handle" aria-hidden="true">⋮⋮</span>
+                <label>
+                    <input class="tiebreak-enable" type="checkbox" data-key="${item.key}" ${item.enabled ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>
+                    <span>${TIEBREAK_LABELS[item.key]}</span>
+                </label>
+            </li>
+        `).join('');
+        return `
+            <div class="tiebreak-config-panel">
+                <h3>晉級比較順序</h3>
+                <p class="tiebreak-hint">同分時依序比較已勾選項目。預設：勝場 → 得失分差 → 得分 → 失分 → 隊名字元排序。可拖曳調整順序。</p>
+                <ul class="tiebreak-order-list" id="tiebreak-order-list">${items}</ul>
+                ${canEdit ? '<button type="button" class="btn-secondary" onclick="resetTiebreakOrderToDefault()">還原預設</button>' : ''}
+            </div>
+        `;
+    }
+
+    function bindTiebreakConfigEvents() {
+        const list = document.getElementById('tiebreak-order-list');
+        if (!list || adminReadOnlyMode) return;
+
+        let dragKey = null;
+        list.querySelectorAll('.tiebreak-order-item').forEach((item) => {
+            item.addEventListener('dragstart', (event) => {
+                dragKey = item.dataset.key || null;
+                item.classList.add('dragging');
+                event.dataTransfer.effectAllowed = 'move';
+            });
+            item.addEventListener('dragend', () => {
+                item.classList.remove('dragging');
+                dragKey = null;
+            });
+            item.addEventListener('dragover', (event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+            });
+            item.addEventListener('drop', (event) => {
+                event.preventDefault();
+                const targetKey = item.dataset.key;
+                if (dragKey && targetKey) reorderTiebreakRule(dragKey, targetKey);
+                dragKey = null;
+            });
+        });
+
+        list.querySelectorAll('.tiebreak-enable').forEach((checkbox) => {
+            checkbox.addEventListener('change', () => {
+                setTiebreakRuleEnabled(checkbox.dataset.key, checkbox.checked);
+            });
+        });
+    }
+
+    function getKnockoutQualificationStatus() {
+        if (tournamentFormat !== 'group_knockout') {
+            return { inconsistent: false, disqualified: [], missing: [], locked: false };
+        }
+        const qualified = deriveQualifiedTeams(groupStageData);
+        const qualifiedSet = new Set(qualified);
+        const knockoutTeams = [...getOpeningRoundTeamNames()];
+        const disqualified = knockoutTeams.filter((name) => !qualifiedSet.has(name));
+        const missing = qualified.filter((name) => !knockoutTeams.includes(name));
+        return {
+            inconsistent: disqualified.length > 0 || missing.length > 0,
+            disqualified,
+            missing,
+            locked: hasOpeningRoundStarted(),
+        };
+    }
+
+    function renderGroupQualificationSummary() {
+        const summary = document.getElementById('group-summary');
+        if (!summary) return;
+
+        if (tournamentFormat === 'group_only') {
+            summary.classList.remove('hidden');
+            summary.innerHTML = `<span>目前為純小組循環賽模式：僅顯示小組戰績表。同分時依「${escapeHtml(describeTiebreakRules())}」排序。</span>`;
+            return;
+        }
+
+        if (tournamentFormat !== 'group_knockout') {
+            summary.classList.add('hidden');
+            summary.innerHTML = '';
+            return;
+        }
+
+        const status = getKnockoutQualificationStatus();
+        if (!status.inconsistent) {
+            summary.classList.add('hidden');
+            summary.innerHTML = '';
+            return;
+        }
+
+        let html = '';
+        if (status.disqualified.length) {
+            html += `<div class="qual-warning">淘汰賽含有未晉級隊伍：${escapeHtml(status.disqualified.join('、'))}。</div>`;
+        }
+        if (status.missing.length) {
+            html += `<div class="qual-warning">淘汰賽缺少晉級隊伍：${escapeHtml(status.missing.join('、'))}。</div>`;
+        }
+        if (status.locked) {
+            html += '<div>開幕輪已開始比賽，隊伍位置已鎖定；請調整小組戰績或晉級規則後再儲存。</div>';
+        } else if (!adminReadOnlyMode) {
+            html += '<button type="button" class="btn-secondary" onclick="confirmRebuildKnockoutFromQualified()">依最新晉級名單重建淘汰賽開幕輪</button>';
+        }
+        summary.classList.remove('hidden');
+        summary.innerHTML = html;
+    }
+
+    function handleGroupQualificationChange() {
+        renderGroupQualificationSummary();
+    }
+
+    function confirmRebuildKnockoutFromQualified() {
+        if (adminReadOnlyMode) return;
+        const status = getKnockoutQualificationStatus();
+        if (status.locked) {
+            showToast('開幕輪已開始比賽，無法重建。', 'error', 2200);
+            return;
+        }
+        if (!confirm('會依最新晉級名單重建淘汰賽開幕輪，現有對位將被清除。確定要繼續？')) return;
+        const result = rebuildKnockoutFromGroupQualifiedTeams();
+        if (!result.ok) {
+            alert(result.error || '無法重建淘汰賽。');
+            return;
+        }
+        renderGroupSection();
+        showToast('已依最新晉級名單重建淘汰賽開幕輪。', 'success', 2000);
+    }
+
+    function validateKnockoutEntrantsBeforeSave() {
+        if (tournamentFormat !== 'group_knockout') return { ok: true };
+        const status = getKnockoutQualificationStatus();
+        if (!status.inconsistent) return { ok: true };
+        if (status.disqualified.length) {
+            return {
+                ok: false,
+                message: `淘汰賽含有未晉級隊伍：${status.disqualified.join('、')}。請調整戰績／晉級規則，或重建淘汰賽開幕輪。`,
+            };
+        }
+        return {
+            ok: false,
+            message: `淘汰賽缺少晉級隊伍：${status.missing.join('、')}。請重建淘汰賽開幕輪或調整對位。`,
+        };
+    }
+
     function getGroupResultByMatchId(matchId) {
         return (groupStageData.results || []).find((item) => item.match_id === matchId) || null;
     }
@@ -2136,6 +2458,7 @@
         }
         groupStageData.results = nextResults;
         renderGroupSection();
+        handleGroupQualificationChange();
     }
 
     function setGroupMatchScore(matchId, side, rawValue) {
@@ -2160,6 +2483,7 @@
             showToast('勝方得分不可低於敗方。', 'error', 2000);
         }
         renderGroupSection();
+        handleGroupQualificationChange();
     }
 
     function renderGroupMatchTeamCell(match, side, winner, canEdit, result) {
@@ -2186,10 +2510,10 @@
 
     function deriveQualifiedTeams(groupData) {
         const winsByGroup = getGroupWinsMap(groupData.matches, groupData.results);
+        const goalsByGroup = getGroupGoalStatsByGroup(groupData.matches, groupData.results);
         const qualified = [];
         groupData.groups.forEach((group) => {
-            const wins = winsByGroup[group.name] || {};
-            const ranked = [...group.teams].sort((a, b) => (wins[b] || 0) - (wins[a] || 0) || naturalCompare(a, b));
+            const ranked = rankGroupTeams(group.teams, group.name, groupData, winsByGroup, goalsByGroup);
             const topNRule = groupData.advanceRules.find((item) => item.group === group.name);
             const topN = Math.max(1, Number(topNRule?.top_n || 1));
             qualified.push(...ranked.slice(0, topN));
@@ -2218,7 +2542,7 @@
             const wins = winsByGroup[group.name] || {};
             const losses = lossesByGroup[group.name] || {};
             const goals = goalsByGroup[group.name] || {};
-            const ranked = [...group.teams].sort((a, b) => (wins[b] || 0) - (wins[a] || 0) || naturalCompare(a, b));
+            const ranked = rankGroupTeams(group.teams, group.name, groupStageData, winsByGroup, goalsByGroup);
             return `
                 <div class="group-card">
                     <h3>${escapeHtml(group.name)} 戰績</h3>
@@ -2237,7 +2561,7 @@
             `;
         }).join('');
 
-        section.innerHTML = `<h2 class="dashboard-title">小組賽戰績表</h2><div class="group-standings-grid">${blocks}</div><h3>小組賽程（點選隊伍設勝方，選定後可填比分）</h3>
+        section.innerHTML = `<h2 class="dashboard-title">小組賽戰績表</h2>${renderTiebreakConfigPanel()}<div class="group-standings-grid">${blocks}</div><h3>小組賽程（點選隊伍設勝方，選定後可填比分）</h3>
             <table class="leaderboard-table group-schedule-table">
                 <thead><tr><th>#</th><th>小組</th><th>輪次</th><th>客隊</th><th>主隊</th></tr></thead>
                 <tbody>
@@ -2256,14 +2580,8 @@
                 </tbody>
             </table>`;
         section.classList.remove('hidden');
-
-        if (tournamentFormat === 'group_only') {
-            summary.classList.remove('hidden');
-            summary.innerText = '目前為純小組循環賽模式：僅顯示小組戰績表。若戰績相同，依隊名字元順序排序。';
-        } else {
-            summary.classList.add('hidden');
-            summary.innerText = '';
-        }
+        bindTiebreakConfigEvents();
+        renderGroupQualificationSummary();
     }
 
     function setMessage(id, message, type = '') {
@@ -3145,6 +3463,7 @@ ${data.reset_token}`, 'success');
             matches: [],
             results: [],
             advanceRules: [],
+            tiebreakOrder: null,
         };
         lastAppliedTopSettings = {
             teamCount: 4,
@@ -3221,6 +3540,7 @@ ${data.reset_token}`, 'success');
                 matches: groupStageData.matches,
                 results: groupStageData.results,
                 advance_rules: groupStageData.advanceRules,
+                tiebreak_order: getTiebreakOrder(),
             },
             knockout_stage: {
                 entrants,
@@ -3262,7 +3582,11 @@ ${data.reset_token}`, 'success');
             matches: snakeGroupStage.matches || [],
             results: snakeGroupStage.results || [],
             advanceRules: snakeAdvanceRules,
+            tiebreakOrder: null,
         };
+        groupStageData.tiebreakOrder = normalizeTiebreakOrder(
+            groupStageData.tiebreakOrder || snakeGroupStage.tiebreak_order
+        );
         groupStageData.results = (groupStageData.results || []).map((result) => ({
             ...result,
             home_score: result?.winner ? (parseNonNegativeIntScore(result.home_score) ?? 0) : 0,
@@ -3349,6 +3673,11 @@ ${data.reset_token}`, 'success');
     async function saveCurrentTournament() {
         if (adminReadOnlyMode) {
             showToast('管理唯讀模式下不可儲存。', 'error');
+            return;
+        }
+        const saveValidation = validateKnockoutEntrantsBeforeSave();
+        if (!saveValidation.ok) {
+            showToast(saveValidation.message, 'error', 4200);
             return;
         }
         const titleInput = document.getElementById('tournament-title-input');
@@ -3864,6 +4193,7 @@ ${data.reset_token}`, 'success');
             matches,
             results: [],
             advanceRules,
+            tiebreakOrder: getTiebreakOrder(),
         };
         const autoQualified = deriveQualifiedTeams(groupStageData);
         const entrantsToUse = autoQualified;
@@ -4208,7 +4538,7 @@ ${data.reset_token}`, 'success');
         const isBye = rawName === '__BYE__';
         const name = isBye ? '' : rawName;
 
-        if (id.startsWith('W_R1') && !isBye && !adminReadOnlyMode) {
+        if (tournamentFormat === 'group_knockout' && id.startsWith('W_R1') && !isBye && !adminReadOnlyMode) {
             const select = document.createElement('select');
             select.className = 'slot-team-select';
             select.title = '選擇晉級隊伍位置（與其他格子選同一隊會自動對調）';
@@ -4235,6 +4565,16 @@ ${data.reset_token}`, 'success');
                 });
             }
             wrapper.appendChild(select);
+        } else if (tournamentFormat === 'single_elimination' && !isBye && name && !adminReadOnlyMode) {
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'slot-team-input';
+            input.value = name;
+            input.title = '修改隊名（會同步整個賽程）';
+            const commitRename = () => renameTeam(name, input.value);
+            input.addEventListener('change', commitRename);
+            input.addEventListener('blur', commitRename);
+            wrapper.appendChild(input);
         } else if (id.startsWith('W_R1') && !isBye && adminReadOnlyMode) {
             const span = document.createElement('span');
             span.innerText = name || getWaitingText(id, slotNum);
@@ -4554,27 +4894,42 @@ ${data.reset_token}`, 'success');
         return names;
     }
 
+    function getAllBracketTeamNames() {
+        const names = new Set();
+        Object.values(tournamentData).forEach((state) => {
+            if (!state) return;
+            [state.slot1, state.slot2].forEach((slot) => {
+                if (slot && slot !== '__BYE__') names.add(slot);
+            });
+        });
+        return names;
+    }
+
     function validateKnockoutTeamRename(oldName, newName) {
         const trimmed = (newName || '').trim();
         if (!trimmed) return '隊名不可為空。';
         if (trimmed === oldName) return null;
 
-        const pool = getKnockoutEntrantPool();
-        if (!pool.includes(trimmed)) {
-            return tournamentFormat === 'group_knockout'
-                ? '只能改成小組賽晉級名單內的隊伍名稱。'
-                : '只能改成本賽程已註冊的隊伍名稱。';
+        if (tournamentFormat === 'group_knockout') {
+            const pool = getKnockoutEntrantPool();
+            if (!pool.includes(trimmed)) {
+                return '只能改成小組賽晉級名單內的隊伍名稱。';
+            }
+            const openingRound = getOpeningRoundTeamNames();
+            if (openingRound.has(trimmed)) {
+                return '此隊名已在開幕輪使用中。';
+            }
+            if (teamStats[trimmed]?.out) {
+                return '此隊伍已在淘汰賽中被淘汰，無法使用此名稱。';
+            }
+            return null;
         }
 
-        const openingRound = getOpeningRoundTeamNames();
-        if (openingRound.has(trimmed)) {
-            return '此隊名已在開幕輪使用中。';
+        const usedNames = getAllBracketTeamNames();
+        usedNames.delete(oldName);
+        if (usedNames.has(trimmed)) {
+            return '此隊名已被其他隊伍使用。';
         }
-
-        if (teamStats[trimmed]?.out) {
-            return '此隊伍已在淘汰賽中被淘汰，無法使用此名稱。';
-        }
-
         return null;
     }
 
