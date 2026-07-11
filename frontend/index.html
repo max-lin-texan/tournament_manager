@@ -240,25 +240,73 @@
             color: #052e16;
             font-weight: 900;
         }
-        .group-match-cell {
-            cursor: pointer;
-            border-radius: 6px;
-            transition: background-color 0.15s ease, color 0.15s ease;
+        .group-match-entry {
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-        .group-match-cell:hover {
-            background: rgba(59, 130, 246, 0.12);
+        .group-match-cell {
+            flex: 1;
+            min-width: 0;
+            text-align: left;
+            border: 1px solid rgba(59, 130, 246, 0.35);
+            background: linear-gradient(180deg, rgba(59, 130, 246, 0.14), rgba(59, 130, 246, 0.06));
+            color: var(--text);
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 0.88rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+            box-shadow: 0 1px 0 rgba(255,255,255,0.04);
+        }
+        button.group-match-cell:not(.readonly):hover {
+            border-color: rgba(96, 165, 250, 0.75);
+            background: rgba(59, 130, 246, 0.2);
+            box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.18);
+        }
+        button.group-match-cell:not(.readonly):active {
+            transform: translateY(1px);
         }
         .group-match-cell.active {
-            background: rgba(16, 185, 129, 0.18);
+            border-color: rgba(16, 185, 129, 0.75);
+            background: linear-gradient(180deg, rgba(16, 185, 129, 0.24), rgba(16, 185, 129, 0.1));
             color: #bbf7d0;
-            font-weight: 900;
+            box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.22);
         }
         .group-match-cell.readonly {
             cursor: default;
-            opacity: 0.8;
+            border-color: var(--soft-border);
+            background: rgba(255,255,255,0.02);
+            color: var(--text-muted);
+            box-shadow: none;
         }
         .group-match-cell.readonly:hover {
-            background: transparent;
+            background: rgba(255,255,255,0.02);
+        }
+        .match-score-input {
+            width: 52px;
+            flex-shrink: 0;
+            text-align: center;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--soft-border);
+            color: var(--text);
+            border-radius: 6px;
+            padding: 6px 4px;
+            font-size: 0.82rem;
+            font-weight: 800;
+        }
+        .match-score-input:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+        .match-score-input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        .slot-score-input {
+            width: 42px;
+            flex-shrink: 0;
         }
         .btn-flash-success {
             animation: flashSuccess 0.42s ease-out;
@@ -1012,7 +1060,7 @@
         <h2 class="dashboard-title">淘汰賽戰績表</h2>
         <table class="leaderboard-table">
             <thead>
-                <tr><th>排名</th><th>隊伍名稱</th><th>勝場</th><th>敗場</th><th>勝率</th><th>目前狀態</th></tr>
+                <tr><th>排名</th><th>隊伍名稱</th><th>勝場</th><th>敗場</th><th>得分</th><th>失分</th><th>淨勝分</th><th>勝率</th><th>目前狀態</th></tr>
             </thead>
             <tbody id="leaderboard-body"></tbody>
         </table>
@@ -1559,6 +1607,64 @@
         return interleaved;
     }
 
+    function parseNonNegativeIntScore(value) {
+        const trimmed = String(value ?? '').trim();
+        if (!trimmed) return 0;
+        if (!/^\d+$/.test(trimmed)) return null;
+        const number = Number.parseInt(trimmed, 10);
+        if (!Number.isInteger(number) || number < 0) return null;
+        return number;
+    }
+
+    function isValidWinnerLoserScores(winnerScore, loserScore) {
+        return winnerScore >= loserScore;
+    }
+
+    function getGroupMatchScores(result, match) {
+        const homeScore = parseNonNegativeIntScore(result?.home_score) ?? 0;
+        const awayScore = parseNonNegativeIntScore(result?.away_score) ?? 0;
+        const winner = String(result?.winner || '').trim();
+        if (winner === match.home) return { winnerScore: homeScore, loserScore: awayScore };
+        if (winner === match.away) return { winnerScore: awayScore, loserScore: homeScore };
+        return { winnerScore: 0, loserScore: 0 };
+    }
+
+    function getKnockoutMatchScores(state) {
+        if (!state || state.winner === null) return { winnerScore: 0, loserScore: 0 };
+        const winnerSlot = state.winner;
+        const loserSlot = winnerSlot === 1 ? 2 : 1;
+        return {
+            winnerScore: parseNonNegativeIntScore(state[`score${winnerSlot}`]) ?? 0,
+            loserScore: parseNonNegativeIntScore(state[`score${loserSlot}`]) ?? 0,
+        };
+    }
+
+    function getGroupGoalStatsByGroup(matches, results) {
+        const statsByGroup = {};
+        matches.forEach((match) => {
+            if (!statsByGroup[match.group]) statsByGroup[match.group] = {};
+            [match.home, match.away].forEach((team) => {
+                if (!statsByGroup[match.group][team]) statsByGroup[match.group][team] = { gf: 0, ga: 0 };
+            });
+        });
+        (results || []).forEach((result) => {
+            if (!result?.winner) return;
+            const match = matches.find((item) => item.id === result.match_id);
+            if (!match) return;
+            const group = String(result.group || match.group || '').trim();
+            const homeScore = parseNonNegativeIntScore(result.home_score) ?? 0;
+            const awayScore = parseNonNegativeIntScore(result.away_score) ?? 0;
+            if (!statsByGroup[group]) statsByGroup[group] = {};
+            if (!statsByGroup[group][match.home]) statsByGroup[group][match.home] = { gf: 0, ga: 0 };
+            if (!statsByGroup[group][match.away]) statsByGroup[group][match.away] = { gf: 0, ga: 0 };
+            statsByGroup[group][match.home].gf += homeScore;
+            statsByGroup[group][match.home].ga += awayScore;
+            statsByGroup[group][match.away].gf += awayScore;
+            statsByGroup[group][match.away].ga += homeScore;
+        });
+        return statsByGroup;
+    }
+
     function getGroupWinsMap(matches, results) {
         const resultList = Array.isArray(results) ? results : [];
         const winsByGroup = {};
@@ -1594,10 +1700,58 @@
                 group: match.group,
                 winner: winnerName,
                 loser: loserName,
+                home_score: 0,
+                away_score: 0,
             });
         }
         groupStageData.results = nextResults;
         renderGroupSection();
+    }
+
+    function setGroupMatchScore(matchId, side, rawValue) {
+        if (adminReadOnlyMode) return;
+        const match = (groupStageData.matches || []).find((item) => item.id === matchId);
+        const existing = getGroupResultByMatchId(matchId);
+        if (!match || !existing?.winner) return;
+        const parsed = parseNonNegativeIntScore(rawValue);
+        if (parsed === null) {
+            showToast('比分請輸入非負整數。', 'error', 1800);
+            renderGroupSection();
+            return;
+        }
+        const prevHome = parseNonNegativeIntScore(existing.home_score) ?? 0;
+        const prevAway = parseNonNegativeIntScore(existing.away_score) ?? 0;
+        if (side === 'home') existing.home_score = parsed;
+        else existing.away_score = parsed;
+        const { winnerScore, loserScore } = getGroupMatchScores(existing, match);
+        if (!isValidWinnerLoserScores(winnerScore, loserScore)) {
+            existing.home_score = prevHome;
+            existing.away_score = prevAway;
+            showToast('勝方得分不可低於敗方。', 'error', 2000);
+        }
+        renderGroupSection();
+    }
+
+    function renderGroupMatchTeamCell(match, side, winner, canEdit, result) {
+        const teamName = side === 'home' ? match.home : match.away;
+        const isActive = winner === teamName;
+        const cellTag = canEdit ? 'button' : 'div';
+        const cellType = canEdit ? ' type="button"' : '';
+        const onClick = canEdit
+            ? ` onclick='setGroupMatchWinner(${toInlineJsString(match.id)}, ${toInlineJsString(teamName)})'`
+            : '';
+        const scoreKey = side === 'home' ? 'home_score' : 'away_score';
+        const scoreValue = result?.winner ? (parseNonNegativeIntScore(result[scoreKey]) ?? 0) : 0;
+        const scoreDisabled = !result?.winner || !canEdit;
+        const scoreOnChange = canEdit
+            ? ` onchange='setGroupMatchScore(${toInlineJsString(match.id)}, ${toInlineJsString(side)}, this.value)'`
+            : '';
+        return `<div class="group-match-entry">
+            <${cellTag} class="group-match-cell ${isActive ? 'active' : ''} ${canEdit ? '' : 'readonly'}"${cellType}${onClick}>
+                ${isActive ? '✓ ' : ''}${escapeHtml(teamName)}
+            </${cellTag}>
+            <input class="match-score-input" type="number" min="0" step="1" inputmode="numeric" value="${scoreValue}"${scoreDisabled ? ' disabled' : ''}${scoreOnChange} title="比分（非負整數；勝方得分不可低於敗方）">
+        </div>`;
     }
 
     function deriveQualifiedTeams(groupData) {
@@ -1625,8 +1779,10 @@
         }
 
         const winsByGroup = getGroupWinsMap(groupStageData.matches, groupStageData.results);
+        const goalsByGroup = getGroupGoalStatsByGroup(groupStageData.matches, groupStageData.results);
         const blocks = groupStageData.groups.map((group) => {
             const wins = winsByGroup[group.name] || {};
+            const goals = goalsByGroup[group.name] || {};
             const ranked = [...group.teams].sort((a, b) => (wins[b] || 0) - (wins[a] || 0) || naturalCompare(a, b));
             const topNRule = (groupStageData.advanceRules || []).find((item) => item.group === group.name);
             const topN = Math.max(1, Number(topNRule?.top_n || 1));
@@ -1635,37 +1791,34 @@
                 <div class="group-card">
                     <h3>${escapeHtml(group.name)} 戰績</h3>
                     <table class="leaderboard-table">
-                        <thead><tr><th>排名</th><th>隊伍</th><th>勝場</th></tr></thead>
+                        <thead><tr><th>排名</th><th>隊伍</th><th>勝場</th><th>得分</th><th>失分</th><th>淨勝分</th></tr></thead>
                         <tbody>
-                            ${ranked.map((team, idx) => `<tr class="${shouldHighlightQualified && idx < topN ? 'qualified-row' : ''}"><td>${idx + 1}</td><td>${escapeHtml(team)}</td><td>${wins[team] || 0}</td></tr>`).join('')}
+                            ${ranked.map((team, idx) => {
+                                const goal = goals[team] || { gf: 0, ga: 0 };
+                                const gd = goal.gf - goal.ga;
+                                const gdText = gd > 0 ? `+${gd}` : String(gd);
+                                return `<tr class="${shouldHighlightQualified && idx < topN ? 'qualified-row' : ''}"><td>${idx + 1}</td><td>${escapeHtml(team)}</td><td>${wins[team] || 0}</td><td>${goal.gf}</td><td>${goal.ga}</td><td>${gdText}</td></tr>`;
+                            }).join('')}
                         </tbody>
                     </table>
                 </div>
             `;
         }).join('');
 
-        section.innerHTML = `<h2 class="dashboard-title">小組賽戰績表</h2><div class="group-standings-grid">${blocks}</div><h3>小組賽程（直接點主/客欄位切換勝方）</h3>
-            <table class="leaderboard-table">
+        section.innerHTML = `<h2 class="dashboard-title">小組賽戰績表</h2><div class="group-standings-grid">${blocks}</div><h3>小組賽程（點選隊伍設勝方，選定後可填比分）</h3>
+            <table class="leaderboard-table group-schedule-table">
                 <thead><tr><th>#</th><th>小組</th><th>輪次</th><th>客隊</th><th>主隊</th></tr></thead>
                 <tbody>
                     ${groupStageData.matches.map((m, idx) => {
                         const result = getGroupResultByMatchId(m.id);
                         const winner = result?.winner || '';
                         const canEdit = !adminReadOnlyMode;
-                        const awayClass = `group-match-cell ${winner === m.away ? 'active' : ''} ${canEdit ? '' : 'readonly'}`.trim();
-                        const homeClass = `group-match-cell ${winner === m.home ? 'active' : ''} ${canEdit ? '' : 'readonly'}`.trim();
-                        const awayOnClick = canEdit
-                            ? ` onclick='setGroupMatchWinner(${toInlineJsString(m.id)}, ${toInlineJsString(m.away)})'`
-                            : '';
-                        const homeOnClick = canEdit
-                            ? ` onclick='setGroupMatchWinner(${toInlineJsString(m.id)}, ${toInlineJsString(m.home)})'`
-                            : '';
                         return `<tr>
                             <td>${idx + 1}</td>
                             <td>${escapeHtml(m.group)}</td>
                             <td>${m.round}</td>
-                            <td class="${awayClass}"${awayOnClick}>${winner === m.away ? '✓ ' : ''}${escapeHtml(m.away)}</td>
-                            <td class="${homeClass}"${homeOnClick}>${winner === m.home ? '✓ ' : ''}${escapeHtml(m.home)}</td>
+                            <td>${renderGroupMatchTeamCell(m, 'away', winner, canEdit, result)}</td>
+                            <td>${renderGroupMatchTeamCell(m, 'home', winner, canEdit, result)}</td>
                         </tr>`;
                     }).join('')}
                 </tbody>
@@ -2654,6 +2807,7 @@ ${data.reset_token}`, 'success');
         bracketSize = state.bracketSize || getBracketSizeFor(teamCount, maxLosses);
         byeCount = state.byeCount ?? getByeCountFor(teamCount, maxLosses);
         tournamentData = state.tournamentData || {};
+        normalizeTournamentMatchScores();
         teamStats = state.teamStats || {};
         teamNames = state.teamNames || Array.from({ length: teamCount }, (_, index) => `Team ${index + 1}`);
         grandChampion = state.grandChampion || null;
@@ -2677,6 +2831,11 @@ ${data.reset_token}`, 'success');
             results: snakeGroupStage.results || [],
             advanceRules: snakeAdvanceRules,
         };
+        groupStageData.results = (groupStageData.results || []).map((result) => ({
+            ...result,
+            home_score: result?.winner ? (parseNonNegativeIntScore(result.home_score) ?? 0) : 0,
+            away_score: result?.winner ? (parseNonNegativeIntScore(result.away_score) ?? 0) : 0,
+        }));
         if (tournamentFormat !== 'single_elimination') {
             const groupSum = (groupStageData.groups || []).reduce((sum, group) => sum + ((group.teams || []).length), 0);
             const savedTotal = Number(snakeGroupStage.total_teams || groupStageData.totalTeams || 0);
@@ -3274,7 +3433,11 @@ ${data.reset_token}`, 'success');
     }
 
     function createMatch(id, label, side, roundKey) {
-        if (!tournamentData[id]) tournamentData[id] = { slot1: '', slot2: '', winner: null, label };
+        if (!tournamentData[id]) tournamentData[id] = { slot1: '', slot2: '', winner: null, score1: 0, score2: 0, label };
+        else {
+            if (tournamentData[id].score1 === undefined) tournamentData[id].score1 = 0;
+            if (tournamentData[id].score2 === undefined) tournamentData[id].score2 = 0;
+        }
         matchOrder.push(id);
         columns[side].push({ id, roundKey });
     }
@@ -3551,6 +3714,7 @@ ${data.reset_token}`, 'success');
         if (state.winner === slotNum) slot.classList.add('winner');
         else if (state.winner !== null && !isBye) slot.classList.add('loser');
 
+        let winButton = null;
         if (name && !matchHasBye(id) && !adminReadOnlyMode) {
             const btn = document.createElement('button');
             btn.className = 'win-btn';
@@ -3563,8 +3727,60 @@ ${data.reset_token}`, 'success');
                 renderTreePreserveScroll();
             });
             slot.appendChild(btn);
+            winButton = btn;
+        }
+
+        if (name && !isBye && state.winner !== null) {
+            const scoreInput = document.createElement('input');
+            scoreInput.type = 'number';
+            scoreInput.min = '0';
+            scoreInput.step = '1';
+            scoreInput.inputMode = 'numeric';
+            scoreInput.className = 'match-score-input slot-score-input';
+            scoreInput.title = '比分（非負整數；勝方得分不可低於敗方）';
+            scoreInput.value = String(parseNonNegativeIntScore(state[`score${slotNum}`]) ?? 0);
+            if (adminReadOnlyMode) {
+                scoreInput.disabled = true;
+            } else {
+                scoreInput.addEventListener('change', (event) => {
+                    setKnockoutMatchScore(id, slotNum, event.target.value);
+                });
+            }
+            if (winButton) slot.insertBefore(scoreInput, winButton);
+            else slot.appendChild(scoreInput);
         }
         return slot;
+    }
+
+    function setKnockoutMatchScore(id, slotNum, rawValue) {
+        if (adminReadOnlyMode) return;
+        const state = tournamentData[id];
+        if (!state || state.winner === null) return;
+        const parsed = parseNonNegativeIntScore(rawValue);
+        if (parsed === null) {
+            showToast('比分請輸入非負整數。', 'error', 1800);
+            renderTreePreserveScroll();
+            return;
+        }
+        const prevWinner = parseNonNegativeIntScore(state[`score${state.winner}`]) ?? 0;
+        const prevLoser = parseNonNegativeIntScore(state[`score${state.winner === 1 ? 2 : 1}`]) ?? 0;
+        state[`score${slotNum}`] = parsed;
+        const { winnerScore, loserScore } = getKnockoutMatchScores(state);
+        if (!isValidWinnerLoserScores(winnerScore, loserScore)) {
+            state[`score${state.winner}`] = prevWinner;
+            state[`score${state.winner === 1 ? 2 : 1}`] = prevLoser;
+            showToast('勝方得分不可低於敗方。', 'error', 2000);
+        }
+        recalculateStats();
+        renderTreePreserveScroll();
+    }
+
+    function normalizeTournamentMatchScores() {
+        Object.values(tournamentData).forEach((state) => {
+            if (!state || typeof state !== 'object') return;
+            if (state.score1 === undefined) state.score1 = 0;
+            if (state.score2 === undefined) state.score2 = 0;
+        });
     }
 
     // 🛠️ 已修改：動態解析敗部各欄位的明確位置來源（某位置勝者或敗者）
@@ -3640,6 +3856,8 @@ ${data.reset_token}`, 'success');
 
         cancelMatchResult(id);
         state.winner = winnerSlot;
+        if (state.score1 === undefined) state.score1 = 0;
+        if (state.score2 === undefined) state.score2 = 0;
 
         if (id === 'GF_MATCH' && maxLosses === 2 && hasGrandFinalReset) {
             clearGrandFinalResetMatch();
@@ -3722,6 +3940,8 @@ ${data.reset_token}`, 'success');
         const currentWinner = state[`slot${state.winner}`];
         const currentLoser = state[`slot${state.winner === 1 ? 2 : 1}`];
         state.winner = null;
+        state.score1 = 0;
+        state.score2 = 0;
 
         if (id === 'GF_MATCH' && maxLosses === 2 && hasGrandFinalReset) {
             clearGrandFinalResetMatch();
@@ -4106,14 +4326,23 @@ ${baseStyle}
             const loserName = state[`slot${loserSlot}`];
             if (!winnerName || winnerName === '__BYE__' || !loserName || loserName === '__BYE__') return;
 
-            rows.push({ id, label: state.label, slot1: state.slot1, slot2: state.slot2, winnerName, loserName });
+            rows.push({
+                id,
+                label: state.label,
+                slot1: state.slot1,
+                slot2: state.slot2,
+                score1: parseNonNegativeIntScore(state.score1) ?? 0,
+                score2: parseNonNegativeIntScore(state.score2) ?? 0,
+                winnerName,
+                loserName,
+            });
         });
 
         if (!rows.length) return '<div class="report-empty">目前沒有可列出的正式對戰紀錄。</div>';
 
         return `<table class="report-match-table">
             <thead>
-                <tr><th>#</th><th>場次代號</th><th>賽程名稱</th><th>隊伍 1</th><th>隊伍 2</th><th>勝方</th><th>敗方</th></tr>
+                <tr><th>#</th><th>場次代號</th><th>賽程名稱</th><th>隊伍 1</th><th>比分</th><th>隊伍 2</th><th>比分</th><th>勝方</th><th>敗方</th></tr>
             </thead>
             <tbody>
                 ${rows.map((row, index) => `<tr>
@@ -4121,7 +4350,9 @@ ${baseStyle}
                     <td>${escapeHtml(row.id)}</td>
                     <td>${escapeHtml(row.label)}</td>
                     <td>${escapeHtml(row.slot1)}</td>
+                    <td>${row.score1}</td>
                     <td>${escapeHtml(row.slot2)}</td>
+                    <td>${row.score2}</td>
                     <td>${escapeHtml(row.winnerName)}</td>
                     <td>${escapeHtml(row.loserName)}</td>
                 </tr>`).join('')}
@@ -4153,7 +4384,7 @@ ${baseStyle}
     }
 
     function recalculateStats() {
-        teamNames.forEach((name) => { teamStats[name] = { w: 0, l: 0, out: false }; });
+        teamNames.forEach((name) => { teamStats[name] = { w: 0, l: 0, gf: 0, ga: 0, out: false }; });
 
         matchOrder.forEach((id) => {
             const state = tournamentData[id];
@@ -4161,9 +4392,17 @@ ${baseStyle}
             const winnerName = state[`slot${state.winner}`];
             const loserName = state[`slot${state.winner === 1 ? 2 : 1}`];
             if (loserName === '__BYE__') return;
-            if (winnerName && winnerName !== '__BYE__' && teamStats[winnerName]) teamStats[winnerName].w += 1;
+            const winnerScore = parseNonNegativeIntScore(state[`score${state.winner}`]) ?? 0;
+            const loserScore = parseNonNegativeIntScore(state[`score${state.winner === 1 ? 2 : 1}`]) ?? 0;
+            if (winnerName && winnerName !== '__BYE__' && teamStats[winnerName]) {
+                teamStats[winnerName].w += 1;
+                teamStats[winnerName].gf += winnerScore;
+                teamStats[winnerName].ga += loserScore;
+            }
             if (loserName && teamStats[loserName]) {
                 teamStats[loserName].l += 1;
+                teamStats[loserName].gf += loserScore;
+                teamStats[loserName].ga += winnerScore;
                 teamStats[loserName].out = teamStats[loserName].l >= maxLosses;
             }
         });
@@ -4208,9 +4447,12 @@ ${baseStyle}
         const sorted = teamNames.map((name) => {
             const w = teamStats[name]?.w || 0;
             const l = teamStats[name]?.l || 0;
+            const gf = teamStats[name]?.gf || 0;
+            const ga = teamStats[name]?.ga || 0;
+            const gd = gf - ga;
             const games = w + l;
             return {
-                name, w, l,
+                name, w, l, gf, ga, gd,
                 winRate: games > 0 ? w / games : 0,
                 winRateText: games > 0 ? `${(w / games * 100).toFixed(1)}%` : '—',
                 out: teamStats[name]?.out || false
@@ -4227,7 +4469,7 @@ ${baseStyle}
             let statusText = team.out ? '<span class="status-out">已淘汰</span>' : '<span class="status-alive">存活中</span>';
             if (team.name === finalLoserName) statusText = '<span class="status-out">亞軍（已淘汰）</span>';
             if (team.name === grandChampion) statusText = '<span class="status-champion">🏆 總冠軍</span>';
-            tbody.insertAdjacentHTML('beforeend', `<tr><td>${index + 1}</td><td>${escapeHtml(team.name)}</td><td>${team.w}</td><td>${team.l}</td><td>${team.winRateText}</td><td>${statusText}</td></tr>`);
+            tbody.insertAdjacentHTML('beforeend', `<tr><td>${index + 1}</td><td>${escapeHtml(team.name)}</td><td>${team.w}</td><td>${team.l}</td><td>${team.gf}</td><td>${team.ga}</td><td>${team.gd > 0 ? `+${team.gd}` : team.gd}</td><td>${team.winRateText}</td><td>${statusText}</td></tr>`);
         });
     }
 
