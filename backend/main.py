@@ -114,6 +114,45 @@ def build_group_rank_map(group_stage: dict) -> dict[str, list[str]]:
     return rank_map
 
 
+def extract_opening_round_assignments(state: dict) -> list[str]:
+    tournament_data = state.get("tournamentData") or {}
+    if not isinstance(tournament_data, dict):
+        return []
+
+    assigned: list[str] = []
+    for match_id in sorted(tournament_data.keys()):
+        if not str(match_id).startswith("W_R1"):
+            continue
+        match_state = tournament_data[match_id]
+        if not isinstance(match_state, dict):
+            continue
+        for slot in ("slot1", "slot2"):
+            value = str(match_state.get(slot) or "").strip()
+            if value and value != "__BYE__":
+                assigned.append(value)
+    return assigned
+
+
+def extract_knockout_team_names(state: dict) -> set[str]:
+    names: set[str] = set()
+    tournament_data = state.get("tournamentData") or {}
+    if isinstance(tournament_data, dict):
+        for match_state in tournament_data.values():
+            if not isinstance(match_state, dict):
+                continue
+            for slot in ("slot1", "slot2"):
+                value = str(match_state.get(slot) or "").strip()
+                if value and value != "__BYE__":
+                    names.add(value)
+    team_names = state.get("teamNames") or []
+    if isinstance(team_names, list):
+        for team in team_names:
+            value = str(team).strip()
+            if value:
+                names.add(value)
+    return names
+
+
 def validate_group_knockout_state(state: dict, mode: str) -> None:
     group_stage = state.get("group_stage") or {}
     knockout_stage = state.get("knockout_stage") or {}
@@ -185,6 +224,32 @@ def validate_group_knockout_state(state: dict, mode: str) -> None:
 
     if len(set(entrants)) != len(entrants):
         raise HTTPException(status_code=422, detail="Knockout entrants cannot contain duplicates")
+
+    opening_assigned = extract_opening_round_assignments(state)
+    if opening_assigned:
+        if len(opening_assigned) != len(set(opening_assigned)):
+            raise HTTPException(
+                status_code=422,
+                detail="Opening round cannot contain duplicate team names",
+            )
+        if set(opening_assigned) != set(entrants) or len(opening_assigned) != len(entrants):
+            raise HTTPException(
+                status_code=422,
+                detail="Opening round teams must match knockout entrants exactly",
+            )
+
+    knockout_teams = extract_knockout_team_names(state)
+    for team in knockout_teams:
+        if team not in group_team_set:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Knockout team {team} is not in group stage team list",
+            )
+        if team not in qualified_set:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Knockout team {team} is not qualified from group stage",
+            )
 
     max_losses = int(knockout_stage.get("max_losses") or 1)
     if max_losses == 2 and not is_power_of_two(len(entrants)):

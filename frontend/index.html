@@ -245,6 +245,12 @@
             align-items: center;
             gap: 8px;
         }
+        .group-match-entry.home-side {
+            flex-direction: row-reverse;
+        }
+        .group-match-entry.home-side .group-match-cell {
+            text-align: center;
+        }
         .group-match-cell {
             flex: 1;
             min-width: 0;
@@ -295,6 +301,13 @@
             padding: 6px 4px;
             font-size: 0.82rem;
             font-weight: 800;
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
+        .match-score-input::-webkit-outer-spin-button,
+        .match-score-input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
         }
         .match-score-input:disabled {
             opacity: 0.45;
@@ -331,16 +344,51 @@
 
         .leaderboard-table th, .leaderboard-table td {
             padding: 8px 12px;
-            text-align: left;
             border-bottom: 1px solid var(--soft-border);
         }
 
         .leaderboard-table th {
+            text-align: center;
             background-color: rgba(255, 255, 255, 0.03);
             color: var(--text-muted);
             font-weight: 700;
             position: sticky;
             top: 0;
+        }
+
+        .leaderboard-table td {
+            text-align: left;
+        }
+
+        .leaderboard-table.standings-table td {
+            text-align: center;
+        }
+
+        .leaderboard-table.group-schedule-table th:nth-child(-n+3),
+        .leaderboard-table.group-schedule-table td:nth-child(-n+3) {
+            text-align: center;
+        }
+
+        .leaderboard-table.group-schedule-table td:nth-child(n+4) {
+            text-align: center;
+        }
+
+        .leaderboard-table.group-schedule-table .group-match-entry {
+            display: inline-flex;
+            width: min(100%, 420px);
+            max-width: 100%;
+            vertical-align: middle;
+        }
+
+        .leaderboard-table.group-schedule-table .group-match-cell {
+            flex: 1 1 360px;
+            width: 360px;
+            min-width: 360px;
+            max-width: 360px;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .arena-wrapper {
@@ -538,7 +586,8 @@
         }
 
         .slot-name span,
-        .slot-name input {
+        .slot-name input,
+        .slot-name select {
             display: block;
             width: 100%;
             font-size: 0.82rem;
@@ -549,7 +598,8 @@
 
         .slot-name span { color: var(--text-muted); }
 
-        .slot-name input {
+        .slot-name input,
+        .slot-name select {
             background: rgba(255,255,255,0.03);
             border: 1px solid transparent;
             color: #fff;
@@ -558,7 +608,13 @@
             border-radius: 4px;
         }
 
-        .slot-name input:focus { border-color: var(--primary); }
+        .slot-name input:focus,
+        .slot-name select:focus { border-color: var(--primary); }
+
+        .slot-name select:disabled {
+            opacity: 0.65;
+            cursor: not-allowed;
+        }
 
         .slot-actions {
             display: flex;
@@ -587,10 +643,12 @@
 
         .win-btn:hover { background: var(--primary); }
         .slot.winner .slot-name span,
-        .slot.winner .slot-name input { color: var(--success); font-weight: 800; }
+        .slot.winner .slot-name input,
+        .slot.winner .slot-name select { color: var(--success); font-weight: 800; }
         .slot.winner { background-color: rgba(16, 185, 129, 0.09); }
         .slot.loser .slot-name span,
-        .slot.loser .slot-name input { text-decoration: line-through; opacity: 0.55; }
+        .slot.loser .slot-name input,
+        .slot.loser .slot-name select { text-decoration: line-through; opacity: 0.55; }
 
         .slot.bye .slot-name span { color: var(--gold); font-weight: 800; }
         .slot.bye { background-color: rgba(245, 158, 11, 0.06); }
@@ -1081,9 +1139,9 @@
     <div id="group-leaderboard-section" class="leaderboard-section hidden"></div>
     <div id="knockout-leaderboard-section" class="leaderboard-section">
         <h2 class="dashboard-title">淘汰賽戰績表</h2>
-        <table class="leaderboard-table">
+        <table class="leaderboard-table standings-table">
             <thead>
-                <tr><th>排名</th><th>隊伍名稱</th><th>勝場</th><th>敗場</th><th>得分</th><th>失分</th><th>淨勝分</th><th>勝率</th><th>目前狀態</th></tr>
+                <tr><th>排名</th><th>隊伍名稱</th><th>勝</th><th>敗</th><th>得分</th><th>失分</th><th>得失分差</th><th>目前狀態</th></tr>
             </thead>
             <tbody id="leaderboard-body"></tbody>
         </table>
@@ -1232,6 +1290,260 @@
         return clampInt(document.getElementById('teams-select')?.value || String(getTotalTeamCount()), 4, 128, 4);
     }
 
+    function getGroupDistributionStructure(distribution) {
+        return (distribution || []).map((item) => ({
+            letter: item.letter,
+            teamCount: Number(item.teamCount || 0),
+        }));
+    }
+
+    function isGroupDistributionStructureEqual(oldDistribution, newDistribution) {
+        return JSON.stringify(getGroupDistributionStructure(oldDistribution))
+            === JSON.stringify(getGroupDistributionStructure(newDistribution));
+    }
+
+    function isOnlyAdvanceQuotaChange(oldDistribution, newDistribution) {
+        if (!isGroupDistributionStructureEqual(oldDistribution, newDistribution)) return false;
+        return JSON.stringify(oldDistribution || []) !== JSON.stringify(newDistribution || []);
+    }
+
+    function isGroupRosterStructureEqual(oldGroups, newGroups) {
+        if (!Array.isArray(oldGroups) || !Array.isArray(newGroups) || oldGroups.length !== newGroups.length) {
+            return false;
+        }
+        return oldGroups.every((group, index) => {
+            const nextGroup = newGroups[index];
+            return (group?.name || '') === (nextGroup?.name || '')
+                && (group?.teams || []).length === (nextGroup?.teams || []).length;
+        });
+    }
+
+    function buildGroupTeamRenameMapBySlot(oldGroups, newGroups) {
+        if (!isGroupRosterStructureEqual(oldGroups, newGroups)) return null;
+        const renameMap = new Map();
+        let hasRename = false;
+        for (let groupIndex = 0; groupIndex < oldGroups.length; groupIndex += 1) {
+            const oldTeams = oldGroups[groupIndex].teams || [];
+            const newTeams = newGroups[groupIndex].teams || [];
+            for (let teamIndex = 0; teamIndex < oldTeams.length; teamIndex += 1) {
+                const oldName = oldTeams[teamIndex];
+                const newName = newTeams[teamIndex];
+                if (!oldName || !newName) continue;
+                if (renameMap.has(oldName) && renameMap.get(oldName) !== newName) return null;
+                renameMap.set(oldName, newName);
+                if (oldName !== newName) hasRename = true;
+            }
+        }
+        return hasRename ? renameMap : null;
+    }
+
+    function mapRenamedTeamName(name, renameMap) {
+        if (!name) return name;
+        return renameMap?.has(name) ? renameMap.get(name) : name;
+    }
+
+    function validateGroupSchedulePreservedAfterRename(oldMatches, newMatches, renameMap) {
+        if (!Array.isArray(oldMatches) || !Array.isArray(newMatches) || oldMatches.length !== newMatches.length) {
+            return false;
+        }
+        const newMatchById = new Map(newMatches.map((match) => [match.id, match]));
+        return oldMatches.every((oldMatch) => {
+            const newMatch = newMatchById.get(oldMatch.id);
+            if (!newMatch) return false;
+            return mapRenamedTeamName(oldMatch.home, renameMap) === newMatch.home
+                && mapRenamedTeamName(oldMatch.away, renameMap) === newMatch.away;
+        });
+    }
+
+    function migrateGroupResultsAfterRename(results, renameMap) {
+        return (results || []).map((result) => ({
+            ...result,
+            winner: mapRenamedTeamName(result.winner, renameMap),
+            loser: mapRenamedTeamName(result.loser, renameMap),
+        }));
+    }
+
+    function propagateTeamRenameEverywhere(renameMap) {
+        if (!renameMap?.size) return;
+        renameMap.forEach((newName, oldName) => {
+            if (!oldName || !newName || oldName === newName) return;
+            Object.values(tournamentData).forEach((state) => {
+                if (!state || typeof state !== 'object') return;
+                ['slot1', 'slot2'].forEach((slot) => {
+                    if (state[slot] === oldName) state[slot] = newName;
+                });
+            });
+            teamNames = teamNames.map((name) => (name === oldName ? newName : name));
+            if (teamStats[oldName]) {
+                teamStats[newName] = teamStats[oldName];
+                delete teamStats[oldName];
+            }
+            if (grandChampion === oldName) grandChampion = newName;
+        });
+    }
+
+    function analyzeGroupSettingsPreservation(prev, next) {
+        const structureChanged = Number(prev.totalTeams || 0) !== next.totalTeams
+            || Number(prev.groupCount || 0) !== next.groupCount
+            || Number(prev.cycles || 1) !== next.cycles
+            || !isGroupDistributionStructureEqual(prev.distribution || [], next.distribution);
+        const hasResults = (prev.results || []).length > 0;
+        const onlyTopNChanged = !structureChanged
+            && isOnlyAdvanceQuotaChange(prev.distribution || [], next.distribution);
+        const renameMap = !structureChanged
+            ? buildGroupTeamRenameMapBySlot(prev.groups || [], next.groups || [])
+            : null;
+        const groupsChanged = JSON.stringify(prev.groups || []) !== JSON.stringify(next.groups || []);
+
+        if (structureChanged) {
+            return { canPreserveResults: false, renameMap: null, onlyTopNChanged: false, groupUnchanged: false };
+        }
+        if (isGroupStageUnchanged(prev, next)) {
+            return {
+                canPreserveResults: true,
+                renameMap: null,
+                onlyTopNChanged: false,
+                groupUnchanged: true,
+            };
+        }
+        if (!hasResults) {
+            return { canPreserveResults: true, renameMap, onlyTopNChanged, groupUnchanged: false };
+        }
+        if (onlyTopNChanged && !groupsChanged) {
+            return { canPreserveResults: true, renameMap: null, onlyTopNChanged: true, groupUnchanged: false };
+        }
+        if (renameMap) {
+            const newMatches = buildGroupMatches(next.groups, next.cycles);
+            const schedulePreserved = validateGroupSchedulePreservedAfterRename(prev.matches || [], newMatches, renameMap);
+            if (schedulePreserved) {
+                return {
+                    canPreserveResults: true,
+                    renameMap,
+                    onlyTopNChanged: isOnlyAdvanceQuotaChange(prev.distribution || [], next.distribution),
+                    groupUnchanged: false,
+                };
+            }
+        }
+        return { canPreserveResults: false, renameMap: null, onlyTopNChanged: false, groupUnchanged: false };
+    }
+
+    function isGroupStageUnchanged(prev, next) {
+        if (!prev || !next) return false;
+        return Number(prev.totalTeams || 0) === Number(next.totalTeams || 0)
+            && Number(prev.groupCount || 0) === Number(next.groupCount || 0)
+            && Number(prev.cycles || 1) === Number(next.cycles || 1)
+            && JSON.stringify(prev.distribution || []) === JSON.stringify(next.distribution || [])
+            && JSON.stringify(prev.groups || []) === JSON.stringify(next.groups || []);
+    }
+
+    function hasPendingKnockoutConfigOnly() {
+        if (getSelectedTournamentFormat() !== 'group_knockout') return false;
+        if (getSelectedTournamentFormat() !== lastAppliedTopSettings.format) return false;
+        if (getSelectedTeamCount() !== lastAppliedTopSettings.teamCount) return false;
+        return getSelectedMaxLosses() !== lastAppliedTopSettings.maxLosses
+            || getSelectedHasGrandFinalReset() !== lastAppliedTopSettings.hasGrandFinalReset;
+    }
+
+    function applyKnockoutConfigOnly(selectedMaxLosses, selectedHasReset) {
+        const qualified = deriveQualifiedTeams(groupStageData);
+        if (selectedMaxLosses === 2 && !isPowerOfTwo(qualified.length)) {
+            return { ok: false, error: '晉級隊伍數不是 2 的次方，復賽不可選雙敗。' };
+        }
+
+        maxLosses = selectedMaxLosses;
+        hasGrandFinalReset = selectedMaxLosses === 2 && selectedHasReset;
+        teamCount = Number(groupStageData.totalTeams || teamCount);
+        lastAppliedTopSettings = {
+            teamCount: getSelectedTeamCount(),
+            maxLosses,
+            format: tournamentFormat,
+            hasGrandFinalReset,
+        };
+        document.getElementById('reset-select').value = String(hasGrandFinalReset);
+
+        return rebuildKnockoutFromGroupQualifiedTeams();
+    }
+
+    function applyGroupStageSettingsUpdate(next, preservation) {
+        const { canPreserveResults, renameMap } = preservation;
+        const preservedResults = canPreserveResults ? [...(groupStageData.results || [])] : [];
+
+        groupStageData.totalTeams = next.totalTeams;
+        groupStageData.groupCount = next.groupCount;
+        groupStageData.cycles = next.cycles;
+        groupStageData.distribution = next.distribution;
+        groupStageData.advanceRules = next.advanceRules;
+        groupStageData.groups = next.groups;
+
+        if (!canPreserveResults) {
+            groupStageData.matches = buildGroupMatches(next.groups, next.cycles);
+            groupStageData.results = [];
+            return { ok: true, preservedResults: false };
+        }
+
+        if (renameMap) {
+            const newMatches = buildGroupMatches(next.groups, next.cycles);
+            groupStageData.matches = newMatches;
+            groupStageData.results = migrateGroupResultsAfterRename(preservedResults, renameMap);
+            propagateTeamRenameEverywhere(renameMap);
+            return { ok: true, preservedResults: true, renamed: true };
+        }
+
+        groupStageData.results = preservedResults;
+        return { ok: true, preservedResults: true, renamed: false };
+    }
+
+    function rebuildKnockoutFromGroupQualifiedTeams() {
+        if (tournamentFormat !== 'group_knockout') return { ok: true, skipped: true };
+
+        const qualified = deriveQualifiedTeams(groupStageData);
+        if (qualified.length < 2) {
+            return { ok: false, error: '小組賽＋淘汰賽模式至少需要 2 支晉級隊伍。' };
+        }
+        if (maxLosses === 2 && !isPowerOfTwo(qualified.length)) {
+            return { ok: false, error: '晉級隊伍數不是 2 的次方，復賽不可選雙敗。' };
+        }
+
+        tournamentData = {};
+        teamStats = {};
+        grandChampion = null;
+        winnerRoutes = {};
+        loserRoutes = {};
+        matchOrder = [];
+        columns = { winners: [], losers: [] };
+        teamNames = [...qualified];
+        teamCount = Number(groupStageData.totalTeams || teamCount);
+        bracketSize = getBracketSizeFor(teamNames.length, maxLosses);
+        byeCount = getByeCountFor(teamNames.length, maxLosses);
+        teamNames.forEach((name) => { teamStats[name] = { w: 0, l: 0, gf: 0, ga: 0, out: false }; });
+        syncArenaTitle();
+
+        const canvas = document.getElementById('pyramid-canvas');
+        if (canvas) canvas.classList.toggle('single-wing', maxLosses === 1);
+        document.getElementById('arena-wrapper')?.classList.remove('hidden');
+        document.getElementById('knockout-leaderboard-section')?.classList.remove('hidden');
+        buildTopology();
+        seedOpeningRound();
+        resolveAutomaticByes();
+        renderTree();
+        recalculateStats();
+        return { ok: true, rebuilt: true };
+    }
+
+    function refreshKnockoutAfterGroupSettingsUpdate(preservation) {
+        if (tournamentFormat !== 'group_knockout') return { ok: true, skipped: true };
+        if (preservation.onlyTopNChanged) {
+            return rebuildKnockoutFromGroupQualifiedTeams();
+        }
+        if (preservation.renameMap) {
+            resolveAutomaticByes();
+            recalculateStats();
+            renderTree();
+            return { ok: true, renamed: true };
+        }
+        return { ok: true, skipped: true };
+    }
+
     function confirmGroupStep1() {
         if (adminReadOnlyMode) return;
         const totalTeams = getSelectedGroupTotalTeams();
@@ -1285,11 +1597,15 @@
             group: `Group ${dist.letter}`,
             top_n: dist.topN,
         }));
-        const step2Changed = JSON.stringify(groupStageData.distribution || []) !== JSON.stringify(nextDistribution)
-            || JSON.stringify(groupStageData.advanceRules || []) !== JSON.stringify(nextAdvanceRules);
+        const step2StructureChanged = !isGroupDistributionStructureEqual(
+            groupStageData.distribution || [],
+            nextDistribution
+        );
+        const onlyTopNChanged = isOnlyAdvanceQuotaChange(groupStageData.distribution || [], nextDistribution);
+        const step2Changed = step2StructureChanged || onlyTopNChanged;
         const hasExistingGroupData = (groupStageData.matches || []).length > 0 || (groupStageData.results || []).length > 0;
-        if (hasExistingGroupData && step2Changed) {
-            const ok = confirm('這會更新小組賽設定並重建賽程，既有小組賽結果將會清除。確定要繼續嗎？');
+        if (hasExistingGroupData && step2StructureChanged) {
+            const ok = confirm('這會更新小組隊伍分配並重建賽程，既有小組賽結果將會清除。確定要繼續嗎？');
             if (!ok) {
                 refreshGroupWizardUI(false);
                 updatePendingSettingsUI();
@@ -1301,11 +1617,25 @@
         groupStageData.cycles = nextCycles;
         groupStageData.distribution = nextDistribution;
         groupStageData.advanceRules = nextAdvanceRules;
-        if (hasExistingGroupData && step2Changed) groupStageData.results = [];
+        if (hasExistingGroupData && step2StructureChanged) groupStageData.results = [];
         groupWizardStep = Math.max(groupWizardStep, 3);
         refreshGroupWizardUI();
         updatePendingSettingsUI();
         flashButton('group-step-2-confirm');
+        if (onlyTopNChanged && !step2StructureChanged) {
+            renderGroupSection();
+            const knockoutResult = rebuildKnockoutFromGroupQualifiedTeams();
+            if (knockoutResult && !knockoutResult.ok) {
+                alert(knockoutResult.error);
+                return;
+            }
+            if (tournamentFormat === 'group_knockout' && knockoutResult?.rebuilt) {
+                showToast('晉級名額已更新，小組賽賽果已保留，淘汰賽已依最新晉級名單重建。', 'success', 2200);
+            } else {
+                showToast('晉級名額已更新，小組賽賽果已保留。', 'success', 1600);
+            }
+            return;
+        }
         showToast('Step 2 已更新', 'success', 1200);
     }
 
@@ -1334,12 +1664,41 @@
             }
         }
         const step3Changed = JSON.stringify(groupStageData.groups || []) !== JSON.stringify(groups);
+        const renameMap = buildGroupTeamRenameMapBySlot(groupStageData.groups || [], groups);
         const hasExistingGroupResult = (groupStageData.results || []).length > 0;
-        if (hasExistingGroupResult && step3Changed) {
-            const ok = confirm('你已建立小組賽結果。修改分組名單會清除既有小組賽結果，確定要繼續嗎？');
+        if (hasExistingGroupResult && step3Changed && !renameMap) {
+            const ok = confirm('此變更會改變小組對戰組合，既有小組賽結果將會清除。確定要繼續嗎？');
             if (!ok) {
                 refreshGroupWizardUI(false);
                 updatePendingSettingsUI();
+                return;
+            }
+        }
+        if (hasExistingGroupResult && renameMap) {
+            const newMatches = buildGroupMatches(groups, groupStageData.cycles || 1);
+            if (!validateGroupSchedulePreservedAfterRename(groupStageData.matches || [], newMatches, renameMap)) {
+                const ok = confirm('此變更會改變小組對戰組合，既有小組賽結果將會清除。確定要繼續嗎？');
+                if (!ok) {
+                    refreshGroupWizardUI(false);
+                    updatePendingSettingsUI();
+                    return;
+                }
+                groupStageData.totalTeams = totalTeams;
+                groupStageData.groupCount = groupCount;
+                groupStageData.cycles = clampInt(document.getElementById('group-cycle-select')?.value || '1', 1, 2, 1);
+                groupStageData.distribution = distribution.distribution;
+                groupStageData.groups = groups;
+                groupStageData.advanceRules = distribution.distribution.map((dist) => ({
+                    group: `Group ${dist.letter}`,
+                    top_n: dist.topN,
+                }));
+                groupStageData.matches = newMatches;
+                groupStageData.results = [];
+                groupWizardStep = Math.max(groupWizardStep, 4);
+                renderGroupSection();
+                updatePendingSettingsUI();
+                flashButton('group-step-3-confirm');
+                showToast('Step 3 已更新', 'success', 1200);
                 return;
             }
         }
@@ -1352,12 +1711,24 @@
             group: `Group ${dist.letter}`,
             top_n: dist.topN,
         }));
-        groupStageData.matches = buildGroupMatches(groups, groupStageData.cycles);
-        if (step3Changed) groupStageData.results = [];
+        if (renameMap && hasExistingGroupResult) {
+            const newMatches = buildGroupMatches(groups, groupStageData.cycles);
+            groupStageData.matches = newMatches;
+            groupStageData.results = migrateGroupResultsAfterRename(groupStageData.results, renameMap);
+            propagateTeamRenameEverywhere(renameMap);
+            refreshKnockoutAfterGroupSettingsUpdate({ renameMap });
+        } else {
+            groupStageData.matches = buildGroupMatches(groups, groupStageData.cycles);
+            if (step3Changed) groupStageData.results = [];
+        }
         groupWizardStep = Math.max(groupWizardStep, 4);
         renderGroupSection();
         updatePendingSettingsUI();
         flashButton('group-step-3-confirm');
+        if (renameMap && hasExistingGroupResult) {
+            showToast('隊名已更新，小組賽賽果已保留。', 'success', 1600);
+            return;
+        }
         showToast('Step 3 已更新', 'success', 1200);
     }
 
@@ -1514,6 +1885,22 @@
         const distribution = collectGroupDistribution(totalTeams, groupCount);
         if (!distribution.ok) return null;
         return distribution.distribution.reduce((sum, item) => sum + Number(item.topN || 0), 0);
+    }
+
+    function getAppliedQualifiedCount() {
+        const rules = groupStageData.advanceRules || [];
+        if (!rules.length) return null;
+        return rules.reduce((sum, rule) => sum + Math.max(1, Number(rule.top_n || 0)), 0);
+    }
+
+    function getEffectiveQualifiedCount() {
+        const selectedFormat = getSelectedTournamentFormat();
+        if (selectedFormat !== 'group_knockout') return null;
+        if (hasEstablishedGroupStage()) {
+            const applied = getAppliedQualifiedCount();
+            if (applied !== null) return applied;
+        }
+        return getProjectedQualifiedCount();
     }
 
     function getSelectedTournamentFormat() {
@@ -1704,6 +2091,26 @@
         return winsByGroup;
     }
 
+    function getGroupLossesMap(matches, results) {
+        const resultList = Array.isArray(results) ? results : [];
+        const lossesByGroup = {};
+        matches.forEach((match) => {
+            if (!lossesByGroup[match.group]) lossesByGroup[match.group] = {};
+            lossesByGroup[match.group][match.home] = lossesByGroup[match.group][match.home] || 0;
+            lossesByGroup[match.group][match.away] = lossesByGroup[match.group][match.away] || 0;
+        });
+        resultList.forEach((result) => {
+            if (!result?.winner) return;
+            const match = matches.find((item) => item.id === result.match_id);
+            if (!match) return;
+            const group = String(result.group || match.group || '').trim();
+            const winner = String(result.winner || '').trim();
+            const loser = winner === match.home ? match.away : match.home;
+            if (lossesByGroup[group] && loser in lossesByGroup[group]) lossesByGroup[group][loser] += 1;
+        });
+        return lossesByGroup;
+    }
+
     function getGroupResultByMatchId(matchId) {
         return (groupStageData.results || []).find((item) => item.match_id === matchId) || null;
     }
@@ -1769,11 +2176,11 @@
         const scoreOnChange = canEdit
             ? ` onchange='setGroupMatchScore(${toInlineJsString(match.id)}, ${toInlineJsString(side)}, this.value)'`
             : '';
-        return `<div class="group-match-entry">
+        return `<div class="group-match-entry${side === 'home' ? ' home-side' : ''}">
             <${cellTag} class="group-match-cell ${isActive ? 'active' : ''} ${canEdit ? '' : 'readonly'}"${cellType}${onClick}>
                 ${isActive ? '✓ ' : ''}${escapeHtml(teamName)}
             </${cellTag}>
-            <input class="match-score-input" type="number" min="0" step="1" inputmode="numeric" value="${scoreValue}"${scoreDisabled ? ' disabled' : ''}${scoreOnChange} title="比分（非負整數；勝方得分不可低於敗方）">
+            <input class="match-score-input" type="text" inputmode="numeric" autocomplete="off" value="${scoreValue}"${scoreDisabled ? ' disabled' : ''}${scoreOnChange} title="比分（非負整數；勝方得分不可低於敗方）">
         </div>`;
     }
 
@@ -1802,25 +2209,27 @@
         }
 
         const winsByGroup = getGroupWinsMap(groupStageData.matches, groupStageData.results);
+        const lossesByGroup = getGroupLossesMap(groupStageData.matches, groupStageData.results);
         const goalsByGroup = getGroupGoalStatsByGroup(groupStageData.matches, groupStageData.results);
+        const qualifiedTeamSet = tournamentFormat === 'group_knockout'
+            ? new Set(deriveQualifiedTeams(groupStageData))
+            : null;
         const blocks = groupStageData.groups.map((group) => {
             const wins = winsByGroup[group.name] || {};
+            const losses = lossesByGroup[group.name] || {};
             const goals = goalsByGroup[group.name] || {};
             const ranked = [...group.teams].sort((a, b) => (wins[b] || 0) - (wins[a] || 0) || naturalCompare(a, b));
-            const topNRule = (groupStageData.advanceRules || []).find((item) => item.group === group.name);
-            const topN = Math.max(1, Number(topNRule?.top_n || 1));
-            const shouldHighlightQualified = tournamentFormat === 'group_knockout';
             return `
                 <div class="group-card">
                     <h3>${escapeHtml(group.name)} 戰績</h3>
-                    <table class="leaderboard-table">
-                        <thead><tr><th>排名</th><th>隊伍</th><th>勝場</th><th>得分</th><th>失分</th><th>淨勝分</th></tr></thead>
+                    <table class="leaderboard-table standings-table">
+                        <thead><tr><th>排名</th><th>隊伍</th><th>勝</th><th>敗</th><th>得分</th><th>失分</th><th>得失分差</th></tr></thead>
                         <tbody>
                             ${ranked.map((team, idx) => {
                                 const goal = goals[team] || { gf: 0, ga: 0 };
                                 const gd = goal.gf - goal.ga;
                                 const gdText = gd > 0 ? `+${gd}` : String(gd);
-                                return `<tr class="${shouldHighlightQualified && idx < topN ? 'qualified-row' : ''}"><td>${idx + 1}</td><td>${escapeHtml(team)}</td><td>${wins[team] || 0}</td><td>${goal.gf}</td><td>${goal.ga}</td><td>${gdText}</td></tr>`;
+                                return `<tr class="${qualifiedTeamSet?.has(team) ? 'qualified-row' : ''}"><td>${idx + 1}</td><td>${escapeHtml(team)}</td><td>${wins[team] || 0}</td><td>${losses[team] || 0}</td><td>${goal.gf}</td><td>${goal.ga}</td><td>${gdText}</td></tr>`;
                             }).join('')}
                         </tbody>
                     </table>
@@ -1847,13 +2256,13 @@
                 </tbody>
             </table>`;
         section.classList.remove('hidden');
-        summary.classList.remove('hidden');
 
         if (tournamentFormat === 'group_only') {
+            summary.classList.remove('hidden');
             summary.innerText = '目前為純小組循環賽模式：僅顯示小組戰績表。若戰績相同，依隊名字元順序排序。';
         } else {
-            const qualified = deriveQualifiedTeams(groupStageData);
-            summary.innerText = `目前晉級名單（同戰績按字元排序）：${qualified.join('、') || '尚未產生'}`;
+            summary.classList.add('hidden');
+            summary.innerText = '';
         }
     }
 
@@ -2789,7 +3198,7 @@ ${data.reset_token}`, 'success');
 
     function buildTournamentStatePayload() {
         const qualified = deriveQualifiedTeams(groupStageData);
-        const entrants = qualified;
+        const entrants = tournamentFormat === 'group_knockout' ? [...teamNames] : qualified;
         return {
             format: tournamentFormat,
             teamCount: getTotalTeamCount(),
@@ -2909,7 +3318,7 @@ ${data.reset_token}`, 'success');
 
         syncArenaTitle();
         const canvas = document.getElementById('pyramid-canvas');
-        canvas.classList.toggle('single-wing', maxLosses === 1);
+        if (canvas) canvas.classList.toggle('single-wing', maxLosses === 1);
 
         renderTree();
         recalculateStats();
@@ -3074,7 +3483,7 @@ ${data.reset_token}`, 'success');
         const resetSelect = document.getElementById('reset-select');
         const knockoutHint = document.getElementById('knockout-hint');
         if (selectedFormat !== 'single_elimination') {
-            const projectedQualified = getProjectedQualifiedCount();
+            const projectedQualified = getEffectiveQualifiedCount();
             const canChooseKnockout = selectedFormat === 'group_knockout' && groupWizardStep >= 3 && projectedQualified !== null;
             lossSelect.disabled = !canChooseKnockout;
             Array.from(lossSelect.options).forEach((option) => {
@@ -3306,40 +3715,26 @@ ${data.reset_token}`, 'success');
             alert('請先完成 Step 1 / Step 2 / Step 3 的確認，再進行套用。');
             return;
         }
-        const changingKnockoutMode = tournamentFormat === 'group_knockout'
-            && selectedFormat === 'group_knockout'
-            && selectedMaxLosses !== maxLosses;
-        if (changingKnockoutMode && hasKnockoutStarted()) {
-            const ok = confirm('淘汰賽已開始。修改淘汰機制會重建淘汰賽並清除既有淘汰賽結果（保留小組賽結果），確定要繼續嗎？');
-            if (!ok) {
-                document.getElementById('loss-select').value = String(maxLosses);
-                document.getElementById('reset-select').value = String(hasGrandFinalReset);
+
+        if (selectedFormat === 'single_elimination') {
+            const pending = hasPendingTopSettings();
+            const warning = pending
+                ? `套用 ${describeTournamentSetting(selectedTeamCount, selectedMaxLosses, selectedHasReset)} 會重新產生賽程，並清除目前隊名與比賽紀錄。確定要繼續？`
+                : '重新產生會清除目前隊名與比賽紀錄。確定要繼續？';
+            if ((pending || hasTournamentStateToClear()) && !confirm(warning)) {
                 updatePendingSettingsUI();
                 return;
             }
-        }
-        const pending = hasPendingTopSettings();
-        const warning = pending
-            ? `套用 ${describeTournamentSetting(selectedTeamCount, selectedMaxLosses, selectedHasReset)} 會重新產生賽程，並清除目前隊名與比賽紀錄。確定要繼續？`
-            : '重新產生會清除目前隊名與比賽紀錄。確定要繼續？';
-
-        if ((pending || hasTournamentStateToClear()) && !confirm(warning)) {
-            updatePendingSettingsUI();
-            return;
-        }
-
-        teamCount = selectedTeamCount;
-        maxLosses = selectedMaxLosses;
-        hasGrandFinalReset = selectedMaxLosses === 2 && selectedHasReset;
-        tournamentFormat = selectedFormat;
-        lastAppliedTopSettings = {
-            teamCount,
-            maxLosses,
-            format: tournamentFormat,
-            hasGrandFinalReset,
-        };
-
-        if (selectedFormat === 'single_elimination') {
+            teamCount = selectedTeamCount;
+            maxLosses = selectedMaxLosses;
+            hasGrandFinalReset = selectedMaxLosses === 2 && selectedHasReset;
+            tournamentFormat = selectedFormat;
+            lastAppliedTopSettings = {
+                teamCount,
+                maxLosses,
+                format: tournamentFormat,
+                hasGrandFinalReset,
+            };
             initTournament();
             updatePendingSettingsUI();
             renderGroupSection();
@@ -3366,6 +3761,99 @@ ${data.reset_token}`, 'success');
             group: `Group ${dist.letter}`,
             top_n: dist.topN,
         }));
+        const nextGroupStage = {
+            totalTeams: selectedGroupTotalTeams,
+            groupCount: selectedGroupCount,
+            cycles: selectedCycles,
+            distribution: distributionResult.distribution,
+            groups,
+            advanceRules,
+        };
+
+        const onlyKnockoutConfigChange = hasPendingKnockoutConfigOnly()
+            && isGroupStageUnchanged(groupStageData, nextGroupStage);
+        if (onlyKnockoutConfigChange) {
+            const confirmMessage = hasKnockoutStarted()
+                ? '修改淘汰機制會重建淘汰賽並清除淘汰賽戰績（保留小組賽結果）。確定要繼續嗎？'
+                : '將依新淘汰機制重建淘汰賽（保留小組賽結果）。確定要繼續嗎？';
+            if (!confirm(confirmMessage)) {
+                document.getElementById('loss-select').value = String(maxLosses);
+                document.getElementById('reset-select').value = String(hasGrandFinalReset);
+                updatePendingSettingsUI();
+                return;
+            }
+            const knockoutResult = applyKnockoutConfigOnly(selectedMaxLosses, selectedHasReset);
+            if (!knockoutResult.ok) {
+                alert(knockoutResult.error);
+                document.getElementById('loss-select').value = String(maxLosses);
+                document.getElementById('reset-select').value = String(hasGrandFinalReset);
+                updatePendingSettingsUI();
+                return;
+            }
+            updatePendingSettingsUI();
+            renderGroupSection();
+            showToast('淘汰機制已更新，小組賽賽果已保留，淘汰賽已重建。', 'success', 2200);
+            return;
+        }
+
+        const pending = hasPendingTopSettings();
+        const warning = pending
+            ? `套用 ${describeTournamentSetting(selectedTeamCount, selectedMaxLosses, selectedHasReset)} 會重新產生賽程，並清除目前隊名與比賽紀錄。確定要繼續？`
+            : '重新產生會清除目前隊名與比賽紀錄。確定要繼續？';
+
+        if ((pending || hasTournamentStateToClear()) && !confirm(warning)) {
+            updatePendingSettingsUI();
+            return;
+        }
+
+        teamCount = selectedTeamCount;
+        maxLosses = selectedMaxLosses;
+        hasGrandFinalReset = selectedMaxLosses === 2 && selectedHasReset;
+        tournamentFormat = selectedFormat;
+        lastAppliedTopSettings = {
+            teamCount,
+            maxLosses,
+            format: tournamentFormat,
+            hasGrandFinalReset,
+        };
+        const preservation = analyzeGroupSettingsPreservation(groupStageData, nextGroupStage);
+        const destructiveGroupChange = !preservation.canPreserveResults && (groupStageData.results || []).length > 0;
+
+        if (destructiveGroupChange && !confirm('此設定變更會清除既有小組賽結果。確定要繼續嗎？')) {
+            updatePendingSettingsUI();
+            return;
+        }
+
+        if (preservation.canPreserveResults) {
+            const updateResult = applyGroupStageSettingsUpdate(nextGroupStage, preservation);
+            if (!updateResult.ok) {
+                alert(updateResult.error || '無法更新小組設定。');
+                return;
+            }
+            teamCount = selectedGroupTotalTeams;
+            document.getElementById('reset-select').value = String(hasGrandFinalReset);
+
+            let knockoutResult = { ok: true };
+            if (preservation.onlyTopNChanged || preservation.renameMap) {
+                knockoutResult = refreshKnockoutAfterGroupSettingsUpdate(preservation);
+            } else if (pending) {
+                initTournament();
+            }
+            if (!knockoutResult.ok) {
+                alert(knockoutResult.error);
+                return;
+            }
+
+            updatePendingSettingsUI();
+            renderGroupSection();
+            if (preservation.onlyTopNChanged && tournamentFormat === 'group_knockout') {
+                showToast('設定已更新，小組賽賽果已保留，淘汰賽已依最新晉級名單重建。', 'success', 2200);
+            } else {
+                showToast('設定已更新，小組賽賽果已保留。', 'success', 1800);
+            }
+            return;
+        }
+
         const matches = buildGroupMatches(groups, selectedCycles);
         groupStageData = {
             totalTeams: selectedGroupTotalTeams,
@@ -3435,7 +3923,7 @@ ${data.reset_token}`, 'success');
         syncArenaTitle();
 
         const canvas = document.getElementById('pyramid-canvas');
-        canvas.classList.toggle('single-wing', maxLosses === 1);
+        if (canvas) canvas.classList.toggle('single-wing', maxLosses === 1);
         if (tournamentFormat === 'group_only') {
             document.getElementById('arena-wrapper').classList.add('hidden');
             document.getElementById('knockout-leaderboard-section').classList.add('hidden');
@@ -3444,9 +3932,7 @@ ${data.reset_token}`, 'success');
         }
 
         document.getElementById('arena-wrapper').classList.remove('hidden');
-        if (tournamentFormat !== 'group_only') {
-            document.getElementById('knockout-leaderboard-section').classList.remove('hidden');
-        }
+        document.getElementById('knockout-leaderboard-section').classList.remove('hidden');
         buildTopology();
         seedOpeningRound();
         resolveAutomaticByes();
@@ -3606,10 +4092,12 @@ ${data.reset_token}`, 'success');
         const leftWing = document.getElementById('left-wing');
         const rightWing = document.getElementById('right-wing');
         const centerArena = document.getElementById('center-arena');
+        if (!leftWing || !rightWing || !centerArena) return;
         leftWing.innerHTML = '';
         rightWing.innerHTML = '';
         centerArena.innerHTML = '';
 
+        syncArenaTitle();
         renderSide(leftWing, 'winners', false);
         if (maxLosses === 2) renderSide(rightWing, 'losers', false);
         else rightWing.innerHTML = '';
@@ -3721,10 +4209,36 @@ ${data.reset_token}`, 'success');
         const name = isBye ? '' : rawName;
 
         if (id.startsWith('W_R1') && !isBye && !adminReadOnlyMode) {
-            const input = document.createElement('input');
-            input.value = name;
-            input.addEventListener('change', (event) => renameTeam(name, event.target.value.trim() || name));
-            wrapper.appendChild(input);
+            const select = document.createElement('select');
+            select.className = 'slot-team-select';
+            select.title = '選擇晉級隊伍位置（與其他格子選同一隊會自動對調）';
+            const pool = getKnockoutEntrantPool();
+            if (name && !pool.includes(name)) {
+                const currentOption = document.createElement('option');
+                currentOption.value = name;
+                currentOption.textContent = name;
+                currentOption.selected = true;
+                select.appendChild(currentOption);
+            }
+            pool.forEach((team) => {
+                const option = document.createElement('option');
+                option.value = team;
+                option.textContent = team;
+                option.selected = team === name;
+                select.appendChild(option);
+            });
+            if (hasOpeningRoundStarted()) {
+                select.disabled = true;
+            } else {
+                select.addEventListener('change', () => {
+                    assignOpeningRoundSlot(id, slotNum, select.value);
+                });
+            }
+            wrapper.appendChild(select);
+        } else if (id.startsWith('W_R1') && !isBye && adminReadOnlyMode) {
+            const span = document.createElement('span');
+            span.innerText = name || getWaitingText(id, slotNum);
+            wrapper.appendChild(span);
         } else {
             const span = document.createElement('span');
             span.innerText = isBye ? '輪空' : (name || getWaitingText(id, slotNum));
@@ -3737,10 +4251,9 @@ ${data.reset_token}`, 'success');
 
         if (name && !isBye && state.winner !== null) {
             const scoreInput = document.createElement('input');
-            scoreInput.type = 'number';
-            scoreInput.min = '0';
-            scoreInput.step = '1';
+            scoreInput.type = 'text';
             scoreInput.inputMode = 'numeric';
+            scoreInput.autocomplete = 'off';
             scoreInput.className = 'match-score-input slot-score-input';
             scoreInput.title = '比分（非負整數；勝方得分不可低於敗方）';
             scoreInput.value = String(parseNonNegativeIntScore(state[`score${slotNum}`]) ?? 0);
@@ -3844,28 +4357,252 @@ ${data.reset_token}`, 'success');
         return '等待中';
     }
 
-    function renameTeam(oldName, newName) {
+    function getKnockoutEntrantPool() {
+        if (tournamentFormat === 'group_knockout') {
+            return deriveQualifiedTeams(groupStageData);
+        }
+        return [...teamNames];
+    }
+
+    function hasOpeningRoundStarted() {
+        return Object.keys(tournamentData).some((id) => {
+            if (!id.startsWith('W_R1')) return false;
+            const state = tournamentData[id];
+            if (!state || matchHasBye(id)) return false;
+            return state.winner !== null;
+        });
+    }
+
+    function clearOpeningRoundByeResultIfNeeded(matchId) {
+        if (!matchId.startsWith('W_R1')) return;
+        const state = tournamentData[matchId];
+        if (!state || !matchHasBye(matchId) || state.winner === null) return;
+        cancelMatchResult(matchId);
+    }
+
+    function syncTeamNamesOrderFromOpeningRound() {
+        const ordered = [];
+        Object.keys(tournamentData)
+            .filter((id) => id.startsWith('W_R1'))
+            .sort((a, b) => naturalCompare(a, b))
+            .forEach((id) => {
+                const state = tournamentData[id];
+                if (!state) return;
+                [state.slot1, state.slot2].forEach((teamName) => {
+                    if (teamName && teamName !== '__BYE__' && !ordered.includes(teamName)) {
+                        ordered.push(teamName);
+                    }
+                });
+            });
+        if (!ordered.length) return;
+        ordered.forEach((teamName) => {
+            if (!teamStats[teamName]) {
+                teamStats[teamName] = { w: 0, l: 0, gf: 0, ga: 0, out: false };
+            }
+        });
+        teamNames = ordered;
+    }
+
+    function snapshotOpeningRoundSlots() {
+        const snapshot = {};
+        Object.keys(tournamentData).forEach((id) => {
+            if (!id.startsWith('W_R1')) return;
+            const state = tournamentData[id];
+            if (!state) return;
+            snapshot[id] = { slot1: state.slot1, slot2: state.slot2 };
+        });
+        return snapshot;
+    }
+
+    function restoreOpeningRoundSlots(snapshot) {
+        Object.entries(snapshot || {}).forEach(([id, slots]) => {
+            if (!tournamentData[id]) return;
+            tournamentData[id].slot1 = slots.slot1;
+            tournamentData[id].slot2 = slots.slot2;
+        });
+    }
+
+    function findOpeningRoundSlotForTeam(teamName) {
+        let found = null;
+        Object.keys(tournamentData).forEach((id) => {
+            if (!id.startsWith('W_R1')) return;
+            const state = tournamentData[id];
+            if (!state) return;
+            if (state.slot1 === teamName) found = { id, slotNum: 1, state };
+            if (state.slot2 === teamName) found = { id, slotNum: 2, state };
+        });
+        return found;
+    }
+
+    function validateOpeningRoundAssignments() {
+        const pool = getKnockoutEntrantPool();
+        const assigned = [];
+        Object.keys(tournamentData).forEach((id) => {
+            if (!id.startsWith('W_R1')) return;
+            const state = tournamentData[id];
+            if (!state) return;
+            [state.slot1, state.slot2].forEach((teamName) => {
+                if (teamName && teamName !== '__BYE__') assigned.push(teamName);
+            });
+        });
+
+        const seen = new Set();
+        const duplicates = [];
+        assigned.forEach((teamName) => {
+            if (seen.has(teamName)) duplicates.push(teamName);
+            seen.add(teamName);
+        });
+
+        const missing = pool.filter((teamName) => !seen.has(teamName));
+        const extra = [...seen].filter((teamName) => !pool.includes(teamName));
+
+        return {
+            ok: duplicates.length === 0
+                && missing.length === 0
+                && extra.length === 0
+                && seen.size === pool.length,
+            duplicates: [...new Set(duplicates)],
+            missing,
+            extra,
+        };
+    }
+
+    function assignOpeningRoundSlot(matchId, slotNum, newTeamName) {
         if (adminReadOnlyMode) return;
-        if (!oldName || !newName || oldName === newName) {
+        const pool = getKnockoutEntrantPool();
+        if (!pool.includes(newTeamName)) {
+            showToast('只能選擇晉級名單內的隊伍。', 'error', 2000);
             renderTreePreserveScroll();
             return;
         }
-        if (teamStats[newName] && newName !== oldName) {
-            alert('隊名不可重複，請使用不同名稱。');
+        if (hasOpeningRoundStarted()) {
+            showToast('開幕輪已開始比賽，無法更換隊伍位置。', 'error', 2200);
+            renderTreePreserveScroll();
+            return;
+        }
+
+        const state = tournamentData[matchId];
+        if (!state) {
+            renderTreePreserveScroll();
+            return;
+        }
+        if (state.winner !== null && !matchHasBye(matchId)) {
+            renderTreePreserveScroll();
+            return;
+        }
+
+        const slotKey = `slot${slotNum}`;
+        const oldTeam = state[slotKey];
+        if (!oldTeam || oldTeam === '__BYE__' || oldTeam === newTeamName) {
+            renderTreePreserveScroll();
+            return;
+        }
+
+        const source = findOpeningRoundSlotForTeam(newTeamName);
+        if (!source) {
+            showToast('此隊伍不在開幕輪中，請選擇其他格子裡的隊伍進行交換。', 'error', 2400);
+            renderTreePreserveScroll();
+            return;
+        }
+        if (source.id === matchId && source.slotNum === slotNum) {
+            renderTreePreserveScroll();
+            return;
+        }
+        if (source.state.winner !== null && !matchHasBye(source.id)) {
+            showToast('該隊伍所在場次已開始，無法交換位置。', 'error', 2200);
+            renderTreePreserveScroll();
+            return;
+        }
+
+        const snapshot = snapshotOpeningRoundSlots();
+        clearOpeningRoundByeResultIfNeeded(matchId);
+        clearOpeningRoundByeResultIfNeeded(source.id);
+        tournamentData[source.id][`slot${source.slotNum}`] = oldTeam;
+        state[slotKey] = newTeamName;
+
+        const validation = validateOpeningRoundAssignments();
+        if (!validation.ok) {
+            restoreOpeningRoundSlots(snapshot);
+            resolveAutomaticByes();
+            if (validation.duplicates.length) {
+                showToast(`開幕輪隊伍不可重複：${validation.duplicates.join('、')}`, 'error', 2800);
+            } else if (validation.missing.length) {
+                showToast(`開幕輪缺少隊伍：${validation.missing.join('、')}`, 'error', 2800);
+            } else {
+                showToast('開幕輪隊伍配置不正確，已還原。', 'error', 2200);
+            }
+            renderTreePreserveScroll();
+            return;
+        }
+
+        syncTeamNamesOrderFromOpeningRound();
+        resolveAutomaticByes();
+        recalculateStats();
+        renderTreePreserveScroll();
+    }
+
+    function getOpeningRoundTeamNames() {
+        const names = new Set();
+        Object.keys(tournamentData).forEach((id) => {
+            if (!id.startsWith('W_R1')) return;
+            const state = tournamentData[id];
+            if (!state) return;
+            [state.slot1, state.slot2].forEach((slot) => {
+                if (slot && slot !== '__BYE__') names.add(slot);
+            });
+        });
+        return names;
+    }
+
+    function validateKnockoutTeamRename(oldName, newName) {
+        const trimmed = (newName || '').trim();
+        if (!trimmed) return '隊名不可為空。';
+        if (trimmed === oldName) return null;
+
+        const pool = getKnockoutEntrantPool();
+        if (!pool.includes(trimmed)) {
+            return tournamentFormat === 'group_knockout'
+                ? '只能改成小組賽晉級名單內的隊伍名稱。'
+                : '只能改成本賽程已註冊的隊伍名稱。';
+        }
+
+        const openingRound = getOpeningRoundTeamNames();
+        if (openingRound.has(trimmed)) {
+            return '此隊名已在開幕輪使用中。';
+        }
+
+        if (teamStats[trimmed]?.out) {
+            return '此隊伍已在淘汰賽中被淘汰，無法使用此名稱。';
+        }
+
+        return null;
+    }
+
+    function renameTeam(oldName, newName) {
+        if (adminReadOnlyMode) return;
+        const trimmed = (newName || '').trim();
+        if (!oldName || !trimmed || oldName === trimmed) {
+            renderTreePreserveScroll();
+            return;
+        }
+
+        const renameError = validateKnockoutTeamRename(oldName, trimmed);
+        if (renameError) {
+            alert(renameError);
             renderTreePreserveScroll();
             return;
         }
 
         Object.values(tournamentData).forEach((state) => {
             ['slot1', 'slot2'].forEach((slot) => {
-                if (state[slot] === oldName) state[slot] = newName;
+                if (state[slot] === oldName) state[slot] = trimmed;
             });
         });
         const index = teamNames.indexOf(oldName);
-        if (index !== -1) teamNames[index] = newName;
-        teamStats[newName] = teamStats[oldName] || { w: 0, l: 0, out: false };
+        if (index !== -1) teamNames[index] = trimmed;
+        teamStats[trimmed] = teamStats[oldName] || { w: 0, l: 0, out: false };
         delete teamStats[oldName];
-        if (grandChampion === oldName) grandChampion = newName;
+        if (grandChampion === oldName) grandChampion = trimmed;
         resolveAutomaticByes();
         recalculateStats();
         renderTreePreserveScroll();
@@ -4165,9 +4902,6 @@ ${data.reset_token}`, 'success');
     });
 
     function downloadTournamentResults() {
-        alignBracketLayout();
-        drawBracketLines();
-
         const html = buildTournamentReportHtml();
         const blob = new Blob(['\uFEFF', html], { type: 'text/html;charset=utf-8' });
         const url = URL.createObjectURL(blob);
@@ -4205,6 +4939,11 @@ ${data.reset_token}`, 'success');
             const span = document.createElement('span');
             span.textContent = input.value || input.getAttribute('value') || '';
             input.replaceWith(span);
+        });
+        root.querySelectorAll('select').forEach((select) => {
+            const span = document.createElement('span');
+            span.textContent = select.options[select.selectedIndex]?.textContent || select.value || '';
+            select.replaceWith(span);
         });
         root.querySelectorAll('[onclick]').forEach((node) => node.removeAttribute('onclick'));
         root.querySelectorAll('h3').forEach((node) => {
@@ -4475,17 +5214,14 @@ ${baseStyle}
             const gf = teamStats[name]?.gf || 0;
             const ga = teamStats[name]?.ga || 0;
             const gd = gf - ga;
-            const games = w + l;
             return {
                 name, w, l, gf, ga, gd,
-                winRate: games > 0 ? w / games : 0,
-                winRateText: games > 0 ? `${(w / games * 100).toFixed(1)}%` : '—',
                 out: teamStats[name]?.out || false
             };
         }).sort((a, b) => {
             if (a.name === grandChampion) return -1;
             if (b.name === grandChampion) return 1;
-            return b.w - a.w || b.winRate - a.winRate || a.l - b.l || naturalCompare(a.name, b.name);
+            return b.w - a.w || b.gd - a.gd || a.l - b.l || naturalCompare(a.name, b.name);
         });
 
         const finalLoserName = getFinalLoserName();
@@ -4494,7 +5230,7 @@ ${baseStyle}
             let statusText = team.out ? '<span class="status-out">已淘汰</span>' : '<span class="status-alive">存活中</span>';
             if (team.name === finalLoserName) statusText = '<span class="status-out">亞軍（已淘汰）</span>';
             if (team.name === grandChampion) statusText = '<span class="status-champion">🏆 總冠軍</span>';
-            tbody.insertAdjacentHTML('beforeend', `<tr><td>${index + 1}</td><td>${escapeHtml(team.name)}</td><td>${team.w}</td><td>${team.l}</td><td>${team.gf}</td><td>${team.ga}</td><td>${team.gd > 0 ? `+${team.gd}` : team.gd}</td><td>${team.winRateText}</td><td>${statusText}</td></tr>`);
+            tbody.insertAdjacentHTML('beforeend', `<tr><td>${index + 1}</td><td>${escapeHtml(team.name)}</td><td>${team.w}</td><td>${team.l}</td><td>${team.gf}</td><td>${team.ga}</td><td>${team.gd > 0 ? `+${team.gd}` : team.gd}</td><td>${statusText}</td></tr>`);
         });
     }
 
