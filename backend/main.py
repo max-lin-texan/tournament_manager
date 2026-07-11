@@ -118,6 +118,10 @@ def normalize_tiebreak_order(raw) -> list[dict]:
         if item["key"] not in seen:
             normalized.append({"key": item["key"], "enabled": True})
 
+    for item in normalized:
+        if item["key"] == "name":
+            item["enabled"] = True
+
     if not any(item.get("enabled", True) for item in normalized):
         for item in normalized:
             if item["key"] == "name":

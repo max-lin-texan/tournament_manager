@@ -233,7 +233,8 @@
             gap: 6px;
         }
         .tiebreak-order-item {
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
             align-items: center;
             gap: 8px;
             padding: 8px 10px;
@@ -242,18 +243,64 @@
             background: rgba(17, 24, 39, 0.55);
             cursor: grab;
         }
-        .tiebreak-order-item.dragging { opacity: 0.55; }
-        .tiebreak-drag-handle {
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            user-select: none;
-        }
-        .tiebreak-order-item label {
+        .tiebreak-order-item .tiebreak-left-controls {
+            grid-column: 1;
             display: flex;
             align-items: center;
             gap: 8px;
-            flex: 1;
+            justify-self: start;
+        }
+        .tiebreak-order-item .tiebreak-order-text-label {
+            grid-column: 2;
+            margin: 0;
+            justify-self: center;
             cursor: pointer;
+        }
+        .tiebreak-order-item--required .tiebreak-order-text {
+            grid-column: 2;
+            justify-self: center;
+        }
+        .tiebreak-order-item .tiebreak-enable,
+        .tiebreak-order-item .tiebreak-required-checkbox {
+            width: 14px;
+            height: 14px;
+            min-width: 14px;
+            min-height: 14px;
+            margin: 0;
+            padding: 0;
+            flex: 0 0 14px;
+        }
+        .tiebreak-order-item .tiebreak-order-text {
+            font-size: 0.82rem;
+            color: #fff;
+            line-height: 1.2;
+            font-weight: 400;
+            text-align: center;
+        }
+        .tiebreak-order-item .tiebreak-drag-handle {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            user-select: none;
+            flex: 0 0 auto;
+            cursor: grab;
+        }
+        .tiebreak-order-item.dragging { opacity: 0.55; }
+        .tiebreak-order-item .tiebreak-enable {
+            accent-color: var(--primary);
+        }
+        .tiebreak-order-item .tiebreak-required-checkbox {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--soft-border);
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+            font-size: 0.68rem;
+            line-height: 1;
+            cursor: not-allowed;
+            user-select: none;
+            box-sizing: border-box;
         }
         .knockout-hint {
             margin-top: 8px;
@@ -1183,6 +1230,13 @@
                     <button id="group-step-3-confirm" class="btn-secondary" type="button">確認/更新 Step 3</button>
                 </div>
             </div>
+            <div id="group-step-4" class="group-step hidden">
+                <div class="group-step-title">Step 4：設定晉級比較順序（必填）</div>
+                <div id="tiebreak-step-4-content"></div>
+                <div class="dashboard-actions" style="margin-top:8px;">
+                    <button id="group-step-4-confirm" class="btn-secondary" type="button">確認/更新 Step 4</button>
+                </div>
+            </div>
         </div>
         <div id="group-summary" class="group-summary hidden"></div>
     </header>
@@ -1236,6 +1290,7 @@
         tiebreakOrder: null,
     };
     let groupWizardStep = 1;
+    let tiebreakDraft = null;
     let groupEditModeUnlocked = true;
     let lastGroupTotalTeamsForWizard = 4;
     let lastAppliedTopSettings = {
@@ -1283,6 +1338,7 @@
         document.getElementById('group-step-1-confirm').addEventListener('click', confirmGroupStep1);
         document.getElementById('group-step-2-confirm').addEventListener('click', confirmGroupStep2);
         document.getElementById('group-step-3-confirm').addEventListener('click', confirmGroupStep3);
+        document.getElementById('group-step-4-confirm').addEventListener('click', confirmGroupStep4);
         refreshGroupWizardUI();
         updatePendingSettingsUI();
     }
@@ -1746,11 +1802,13 @@
                 }));
                 groupStageData.matches = newMatches;
                 groupStageData.results = [];
-                groupWizardStep = Math.max(groupWizardStep, 4);
+                groupWizardStep = 4;
                 renderGroupSection();
                 updatePendingSettingsUI();
+                refreshGroupWizardUI();
                 flashButton('group-step-3-confirm');
-                showToast('Step 3 已更新', 'success', 1200);
+                document.getElementById('group-step-4')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                showToast('Step 3 已更新，請繼續完成 Step 4。', 'success', 1600);
                 return;
             }
         }
@@ -1773,15 +1831,36 @@
             groupStageData.matches = buildGroupMatches(groups, groupStageData.cycles);
             if (step3Changed) groupStageData.results = [];
         }
-        groupWizardStep = Math.max(groupWizardStep, 4);
+        groupWizardStep = 4;
         renderGroupSection();
         updatePendingSettingsUI();
+        refreshGroupWizardUI();
         flashButton('group-step-3-confirm');
+        document.getElementById('group-step-4')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         if (renameMap && hasExistingGroupResult) {
-            showToast('隊名已更新，小組賽賽果已保留。', 'success', 1600);
+            showToast('隊名已更新，小組賽賽果已保留。請繼續完成 Step 4。', 'success', 1800);
             return;
         }
-        showToast('Step 3 已更新', 'success', 1200);
+        showToast('Step 3 已更新，請繼續完成 Step 4。', 'success', 1600);
+    }
+
+    function confirmGroupStep4() {
+        if (adminReadOnlyMode) return;
+        const order = collectTiebreakOrderFromStep4UI();
+        const validation = validateTiebreakOrderHard(order);
+        if (!validation.ok) {
+            alert(validation.error);
+            return;
+        }
+        groupStageData.tiebreakOrder = validation.order;
+        tiebreakDraft = cloneTiebreakOrder(validation.order);
+        groupWizardStep = 5;
+        renderGroupSection();
+        handleGroupQualificationChange();
+        refreshGroupWizardUI();
+        updatePendingSettingsUI();
+        flashButton('group-step-4-confirm');
+        showToast('晉級比較順序已更新，小組戰績與晉級名單已重新計算。', 'success', 1800);
     }
 
     function clampInt(value, min, max, fallback) {
@@ -1798,9 +1877,10 @@
         const groupCountInput = document.getElementById('group-count-input');
         const step2 = document.getElementById('group-step-2');
         const step3 = document.getElementById('group-step-3');
+        const step4 = document.getElementById('group-step-4');
         const distributionRows = document.getElementById('group-distribution-rows');
         const standingsBuilder = document.getElementById('group-standings-builder');
-        if (!groupCountInput || !step2 || !step3 || !distributionRows || !standingsBuilder) return;
+        if (!groupCountInput || !step2 || !step3 || !step4 || !distributionRows || !standingsBuilder) return;
         const selectedFormat = getSelectedTournamentFormat();
         const isGroupOnly = selectedFormat === 'group_only';
 
@@ -1811,6 +1891,7 @@
         if (totalTeams < groupCount * 2) {
             step2.classList.add('hidden');
             step3.classList.add('hidden');
+            step4.classList.add('hidden');
             distributionRows.innerHTML = '';
             standingsBuilder.innerHTML = '';
             return;
@@ -1834,8 +1915,9 @@
         }
 
         step2.classList.toggle('hidden', groupWizardStep < 2);
-        step3.classList.add('hidden');
+        step4.classList.add('hidden');
         if (groupWizardStep < 2) {
+            step3.classList.add('hidden');
             distributionRows.innerHTML = '';
             standingsBuilder.innerHTML = '';
             return;
@@ -1857,13 +1939,13 @@
                 : clampInt(currentSizeFromUi ?? preset.teamCount, 2, totalTeams, defaultTeams);
             const resolvedTopN = topTeamsChanged
                 ? Math.min(fallbackTop, resolvedTeamCount)
-                : clampInt(currentTopFromUi ?? preset.topN, 1, totalTeams, fallbackTop);
+                : clampInt(currentTopFromUi ?? preset.topN, 1, resolvedTeamCount, Math.min(fallbackTop, resolvedTeamCount));
             distributionRows.insertAdjacentHTML('beforeend', `
                 <label>
                     ${letter} 組
                     <input id="group-size-${i}" type="number" min="2" max="${totalTeams}" value="${resolvedTeamCount}">
                     <small class="small-note">此組隊伍數</small>
-                    ${isGroupOnly ? '' : `<input id="group-top-${i}" type="number" min="1" max="${totalTeams}" value="${resolvedTopN}">
+                    ${isGroupOnly ? '' : `<input id="group-top-${i}" type="number" min="1" max="${resolvedTeamCount}" value="${resolvedTopN}">
                     <small class="small-note">此組取前幾名</small>`}
                 </label>
             `);
@@ -1877,6 +1959,7 @@
         const collected = collectGroupDistribution(totalTeams, groupCount);
         if (!collected.ok || groupWizardStep < 3) {
             step3.classList.add('hidden');
+            step4.classList.add('hidden');
             standingsBuilder.innerHTML = '';
             return;
         }
@@ -1908,6 +1991,17 @@
         Array.from(standingsBuilder.querySelectorAll('input')).forEach((node) => {
             node.addEventListener('change', handlePendingSettingsChange);
         });
+
+        if (groupWizardStep >= 4) {
+            step4.classList.remove('hidden');
+            if (!preserveDraft || !tiebreakDraft) {
+                tiebreakDraft = cloneTiebreakOrder(getTiebreakOrder());
+            }
+            renderTiebreakStep4Panel();
+        } else {
+            step4.classList.add('hidden');
+        }
+
         setGroupWizardInputsDisabled(adminReadOnlyMode);
     }
 
@@ -1916,11 +2010,25 @@
         const distribution = [];
         let teamSum = 0;
         for (let i = 0; i < groupCount; i++) {
+            const letter = getGroupLetter(i);
             const teamCount = clampInt(document.getElementById(`group-size-${i}`)?.value, 2, 128, 2);
-            const topN = isGroupOnly
-                ? teamCount
-                : clampInt(document.getElementById(`group-top-${i}`)?.value, 1, teamCount, 1);
-            distribution.push({ letter: getGroupLetter(i), teamCount, topN });
+            if (isGroupOnly) {
+                distribution.push({ letter, teamCount, topN: teamCount });
+                teamSum += teamCount;
+                continue;
+            }
+            const rawTopValue = document.getElementById(`group-top-${i}`)?.value;
+            const parsedTopN = Number.parseInt(String(rawTopValue ?? ''), 10);
+            if (!Number.isInteger(parsedTopN) || parsedTopN < 1) {
+                return { ok: false, error: `${letter} 組晉級名額必須為至少 1 的整數。` };
+            }
+            if (parsedTopN > teamCount) {
+                return {
+                    ok: false,
+                    error: `${letter} 組晉級名額（${parsedTopN}）不可大於此組隊伍數（${teamCount}）。`,
+                };
+            }
+            distribution.push({ letter, teamCount, topN: parsedTopN });
             teamSum += teamCount;
         }
         if (teamSum !== totalTeams) {
@@ -2178,6 +2286,15 @@
         { key: 'ga', enabled: true },
         { key: 'name', enabled: true },
     ];
+    const REQUIRED_TIEBREAK_KEYS = new Set(['name']);
+
+    function getGroupWizardBlockingMessage() {
+        if (groupWizardStep < 2) return '請先按「確認/更新 Step 1」。';
+        if (groupWizardStep < 3) return '請先按「確認/更新 Step 2」。';
+        if (groupWizardStep < 4) return '請先按「確認/更新 Step 3」。';
+        if (groupWizardStep < 5) return '請先按「確認/更新 Step 4」設定晉級比較順序。';
+        return '';
+    }
 
     function normalizeTiebreakOrder(raw) {
         const known = new Set(Object.keys(TIEBREAK_LABELS));
@@ -2192,11 +2309,179 @@
         DEFAULT_TIEBREAK_ORDER.forEach((item) => {
             if (!seen.has(item.key)) normalized.push({ ...item });
         });
+        const nameRule = normalized.find((item) => item.key === 'name');
+        if (nameRule) nameRule.enabled = true;
+        REQUIRED_TIEBREAK_KEYS.forEach((key) => {
+            const rule = normalized.find((item) => item.key === key);
+            if (rule) rule.enabled = true;
+        });
         if (!normalized.some((item) => item.enabled)) {
-            const nameRule = normalized.find((item) => item.key === 'name');
             if (nameRule) nameRule.enabled = true;
         }
         return normalized;
+    }
+
+    function validateTiebreakOrderHard(order) {
+        const normalized = normalizeTiebreakOrder(order);
+        for (const key of REQUIRED_TIEBREAK_KEYS) {
+            const rule = normalized.find((item) => item.key === key);
+            if (!rule?.enabled) {
+                return { ok: false, error: `「${TIEBREAK_LABELS[key]}」為必填比較項目，不可關閉。` };
+            }
+        }
+        if (!normalized.some((item) => item.enabled)) {
+            return { ok: false, error: '請至少啟用一項晉級比較規則。' };
+        }
+        return { ok: true, order: normalized };
+    }
+
+    function cloneTiebreakOrder(order) {
+        return normalizeTiebreakOrder(order).map((item) => ({ ...item }));
+    }
+
+    function getTiebreakDraft() {
+        return cloneTiebreakOrder(tiebreakDraft || getTiebreakOrder());
+    }
+
+    function collectTiebreakOrderFromStep4UI() {
+        const list = document.getElementById('tiebreak-order-list');
+        if (!list) return getTiebreakDraft();
+        const order = [];
+        list.querySelectorAll('.tiebreak-order-item').forEach((item) => {
+            const key = item.dataset.key;
+            if (!key) return;
+            const checkbox = item.querySelector('.tiebreak-enable');
+            order.push({
+                key,
+                enabled: REQUIRED_TIEBREAK_KEYS.has(key) ? true : !!checkbox?.checked,
+            });
+        });
+        return normalizeTiebreakOrder(order.length ? order : getTiebreakDraft());
+    }
+
+    function markTiebreakDraftDirty() {
+        if (groupWizardStep >= 5) {
+            groupWizardStep = 4;
+            updatePendingSettingsUI();
+        }
+    }
+
+    function updateTiebreakDraft(mutator) {
+        if (adminReadOnlyMode) return;
+        const draft = getTiebreakDraft();
+        mutator(draft);
+        tiebreakDraft = normalizeTiebreakOrder(draft);
+        markTiebreakDraftDirty();
+        renderTiebreakStep4Panel();
+    }
+
+    function setTiebreakDraftRuleEnabled(key, enabled) {
+        if (REQUIRED_TIEBREAK_KEYS.has(key)) return;
+        updateTiebreakDraft((draft) => {
+            const item = draft.find((entry) => entry.key === key);
+            if (!item) return;
+            item.enabled = enabled;
+        });
+    }
+
+    function reorderTiebreakDraft(dragKey, targetKey) {
+        if (!dragKey || !targetKey || dragKey === targetKey) return;
+        updateTiebreakDraft((draft) => {
+            const fromIdx = draft.findIndex((entry) => entry.key === dragKey);
+            const toIdx = draft.findIndex((entry) => entry.key === targetKey);
+            if (fromIdx < 0 || toIdx < 0) return;
+            const [item] = draft.splice(fromIdx, 1);
+            draft.splice(toIdx, 0, item);
+        });
+    }
+
+    function resetTiebreakDraftToDefault() {
+        if (adminReadOnlyMode) return;
+        tiebreakDraft = cloneTiebreakOrder(DEFAULT_TIEBREAK_ORDER);
+        markTiebreakDraftDirty();
+        renderTiebreakStep4Panel();
+    }
+
+    function renderTiebreakStep4Panel() {
+        const container = document.getElementById('tiebreak-step-4-content');
+        if (!container) return;
+        const canEdit = !adminReadOnlyMode;
+        const order = getTiebreakDraft();
+        const items = order.map((item) => {
+            const isRequired = REQUIRED_TIEBREAK_KEYS.has(item.key);
+            if (isRequired) {
+                return `
+                    <li class="tiebreak-order-item tiebreak-order-item--required" data-key="${item.key}" draggable="${canEdit ? 'true' : 'false'}">
+                        <div class="tiebreak-left-controls">
+                            <span class="tiebreak-drag-handle" aria-hidden="true">⋮⋮</span>
+                            <span class="tiebreak-required-checkbox" aria-hidden="true">✓</span>
+                        </div>
+                        <span class="tiebreak-order-text">${TIEBREAK_LABELS[item.key]}（不可取消）</span>
+                    </li>
+                `;
+            }
+            const checkboxId = `tiebreak-enable-${item.key}`;
+            return `
+                <li class="tiebreak-order-item" data-key="${item.key}" draggable="${canEdit ? 'true' : 'false'}">
+                    <div class="tiebreak-left-controls">
+                        <span class="tiebreak-drag-handle" aria-hidden="true">⋮⋮</span>
+                        <input class="tiebreak-enable" id="${checkboxId}" type="checkbox" data-key="${item.key}" ${item.enabled ? 'checked' : ''}${canEdit ? '' : ' disabled'}>
+                    </div>
+                    <label class="tiebreak-order-text-label" for="${checkboxId}">
+                        <span class="tiebreak-order-text">${TIEBREAK_LABELS[item.key]}</span>
+                    </label>
+                </li>
+            `;
+        }).join('');
+        container.innerHTML = `
+            <div class="tiebreak-config-panel">
+                <p class="tiebreak-hint">同分時依序比較已勾選項目。預設：勝場 → 得失分差 → 得分 → 失分 → 隊名字元排序。可拖曳調整順序。「隊名字元排序」為固定項目，無法取消。</p>
+                <ul class="tiebreak-order-list" id="tiebreak-order-list">${items}</ul>
+                ${canEdit ? '<button type="button" class="btn-secondary" onclick="resetTiebreakDraftToDefault()">還原預設</button>' : ''}
+            </div>
+        `;
+        bindTiebreakStep4Events();
+    }
+
+    function bindTiebreakStep4Events() {
+        const list = document.getElementById('tiebreak-order-list');
+        if (!list || adminReadOnlyMode) return;
+
+        let dragKey = null;
+        list.querySelectorAll('.tiebreak-order-item').forEach((item) => {
+            item.addEventListener('dragstart', (event) => {
+                dragKey = item.dataset.key || null;
+                item.classList.add('dragging');
+                event.dataTransfer.effectAllowed = 'move';
+            });
+            item.addEventListener('dragend', () => {
+                item.classList.remove('dragging');
+                dragKey = null;
+            });
+            item.addEventListener('dragover', (event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+            });
+            item.addEventListener('drop', (event) => {
+                event.preventDefault();
+                const targetKey = item.dataset.key;
+                if (dragKey && targetKey) reorderTiebreakDraft(dragKey, targetKey);
+                dragKey = null;
+            });
+        });
+
+        list.querySelectorAll('.tiebreak-required-checkbox').forEach((node) => {
+            node.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+            });
+        });
+
+        list.querySelectorAll('.tiebreak-enable').forEach((checkbox) => {
+            checkbox.addEventListener('change', () => {
+                setTiebreakDraftRuleEnabled(checkbox.dataset.key, checkbox.checked);
+            });
+        });
     }
 
     function getTiebreakOrder(groupData = groupStageData) {
@@ -2245,99 +2530,6 @@
         const wins = winsByGroup[groupName] || {};
         const goals = goalsByGroup[groupName] || {};
         return [...teams].sort((a, b) => compareTeamsByTiebreak(a, b, wins, goals, groupData));
-    }
-
-    function setTiebreakRuleEnabled(key, enabled) {
-        if (adminReadOnlyMode) return;
-        const order = getTiebreakOrder();
-        const item = order.find((entry) => entry.key === key);
-        if (!item) return;
-        item.enabled = enabled;
-        if (!order.some((entry) => entry.enabled)) {
-            const nameRule = order.find((entry) => entry.key === 'name');
-            if (nameRule) nameRule.enabled = true;
-            showToast('至少需要保留一項比較規則，已自動保留「隊名字元排序」。', 'info', 2200);
-        }
-        groupStageData.tiebreakOrder = order;
-        renderGroupSection();
-        handleGroupQualificationChange();
-    }
-
-    function reorderTiebreakRule(dragKey, targetKey) {
-        if (adminReadOnlyMode || !dragKey || !targetKey || dragKey === targetKey) return;
-        const order = getTiebreakOrder();
-        const fromIdx = order.findIndex((entry) => entry.key === dragKey);
-        const toIdx = order.findIndex((entry) => entry.key === targetKey);
-        if (fromIdx < 0 || toIdx < 0) return;
-        const [item] = order.splice(fromIdx, 1);
-        order.splice(toIdx, 0, item);
-        groupStageData.tiebreakOrder = order;
-        renderGroupSection();
-        handleGroupQualificationChange();
-    }
-
-    function resetTiebreakOrderToDefault() {
-        if (adminReadOnlyMode) return;
-        groupStageData.tiebreakOrder = DEFAULT_TIEBREAK_ORDER.map((item) => ({ ...item }));
-        renderGroupSection();
-        handleGroupQualificationChange();
-        showToast('已還原預設晉級比較順序。', 'success', 1600);
-    }
-
-    function renderTiebreakConfigPanel() {
-        const canEdit = !adminReadOnlyMode;
-        const order = getTiebreakOrder();
-        const items = order.map((item) => `
-            <li class="tiebreak-order-item" data-key="${item.key}" draggable="${canEdit ? 'true' : 'false'}">
-                <span class="tiebreak-drag-handle" aria-hidden="true">⋮⋮</span>
-                <label>
-                    <input class="tiebreak-enable" type="checkbox" data-key="${item.key}" ${item.enabled ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>
-                    <span>${TIEBREAK_LABELS[item.key]}</span>
-                </label>
-            </li>
-        `).join('');
-        return `
-            <div class="tiebreak-config-panel">
-                <h3>晉級比較順序</h3>
-                <p class="tiebreak-hint">同分時依序比較已勾選項目。預設：勝場 → 得失分差 → 得分 → 失分 → 隊名字元排序。可拖曳調整順序。</p>
-                <ul class="tiebreak-order-list" id="tiebreak-order-list">${items}</ul>
-                ${canEdit ? '<button type="button" class="btn-secondary" onclick="resetTiebreakOrderToDefault()">還原預設</button>' : ''}
-            </div>
-        `;
-    }
-
-    function bindTiebreakConfigEvents() {
-        const list = document.getElementById('tiebreak-order-list');
-        if (!list || adminReadOnlyMode) return;
-
-        let dragKey = null;
-        list.querySelectorAll('.tiebreak-order-item').forEach((item) => {
-            item.addEventListener('dragstart', (event) => {
-                dragKey = item.dataset.key || null;
-                item.classList.add('dragging');
-                event.dataTransfer.effectAllowed = 'move';
-            });
-            item.addEventListener('dragend', () => {
-                item.classList.remove('dragging');
-                dragKey = null;
-            });
-            item.addEventListener('dragover', (event) => {
-                event.preventDefault();
-                event.dataTransfer.dropEffect = 'move';
-            });
-            item.addEventListener('drop', (event) => {
-                event.preventDefault();
-                const targetKey = item.dataset.key;
-                if (dragKey && targetKey) reorderTiebreakRule(dragKey, targetKey);
-                dragKey = null;
-            });
-        });
-
-        list.querySelectorAll('.tiebreak-enable').forEach((checkbox) => {
-            checkbox.addEventListener('change', () => {
-                setTiebreakRuleEnabled(checkbox.dataset.key, checkbox.checked);
-            });
-        });
     }
 
     function getKnockoutQualificationStatus() {
@@ -2561,7 +2753,7 @@
             `;
         }).join('');
 
-        section.innerHTML = `<h2 class="dashboard-title">小組賽戰績表</h2>${renderTiebreakConfigPanel()}<div class="group-standings-grid">${blocks}</div><h3>小組賽程（點選隊伍設勝方，選定後可填比分）</h3>
+        section.innerHTML = `<h2 class="dashboard-title">小組賽戰績表</h2><div class="group-standings-grid">${blocks}</div><h3>小組賽程（點選隊伍設勝方，選定後可填比分）</h3>
             <table class="leaderboard-table group-schedule-table">
                 <thead><tr><th>#</th><th>小組</th><th>輪次</th><th>客隊</th><th>主隊</th></tr></thead>
                 <tbody>
@@ -2580,7 +2772,6 @@
                 </tbody>
             </table>`;
         section.classList.remove('hidden');
-        bindTiebreakConfigEvents();
         renderGroupQualificationSummary();
     }
 
@@ -3453,6 +3644,7 @@ ${data.reset_token}`, 'success');
         hasGrandFinalReset = false;
         tournamentFormat = 'single_elimination';
         groupWizardStep = 1;
+        tiebreakDraft = null;
         groupEditModeUnlocked = true;
         groupStageData = {
             totalTeams: 8,
@@ -3587,6 +3779,7 @@ ${data.reset_token}`, 'success');
         groupStageData.tiebreakOrder = normalizeTiebreakOrder(
             groupStageData.tiebreakOrder || snakeGroupStage.tiebreak_order
         );
+        tiebreakDraft = cloneTiebreakOrder(groupStageData.tiebreakOrder);
         groupStageData.results = (groupStageData.results || []).map((result) => ({
             ...result,
             home_score: result?.winner ? (parseNonNegativeIntScore(result.home_score) ?? 0) : 0,
@@ -3610,7 +3803,9 @@ ${data.reset_token}`, 'success');
             format: tournamentFormat,
             hasGrandFinalReset,
         };
-        groupWizardStep = tournamentFormat === 'single_elimination' ? 1 : 4;
+        groupWizardStep = tournamentFormat === 'single_elimination'
+            ? 1
+            : (hasEstablishedGroupStage() ? 5 : 4);
         groupEditModeUnlocked = !hasEstablishedGroupStage();
 
         const teamsSelect = document.getElementById('teams-select');
@@ -3928,6 +4123,7 @@ ${data.reset_token}`, 'success');
         const selectedFormat = getSelectedTournamentFormat();
         if (selectedFormat === 'single_elimination') {
             groupWizardStep = 1;
+            tiebreakDraft = null;
             groupEditModeUnlocked = true;
         }
         normalizeTeamCountForCurrentFormat();
@@ -3957,9 +4153,9 @@ ${data.reset_token}`, 'success');
                 && selectedGroupCount <= 42
                 && selectedGroupTotalTeams >= selectedGroupCount * 2
                 && distributionResult.ok
-                && groupWizardStep >= 4;
+                && groupWizardStep >= 5;
             settingWarning = distributionResult.ok
-                ? (groupWizardStep >= 4 ? '' : '請依序按「確認 Step 1 / Step 2 / Step 3」後再套用')
+                ? getGroupWizardBlockingMessage()
                 : (distributionResult.error || '請先完成小組分配設定');
         }
         const badge = document.getElementById('pending-settings-badge');
@@ -3994,8 +4190,8 @@ ${data.reset_token}`, 'success');
                 : '設定已套用';
         }
         if (formatNote) {
-            formatNote.classList.toggle('hidden', !settingWarning || !validSetting);
-            formatNote.innerText = validSetting ? settingWarning : '';
+            formatNote.classList.toggle('hidden', !settingWarning);
+            formatNote.innerText = settingWarning || '';
         }
         if (revertButton) revertButton.classList.toggle('hidden', !pending);
         if (applyButton) {
@@ -4040,8 +4236,9 @@ ${data.reset_token}`, 'success');
             updatePendingSettingsUI();
             return;
         }
-        if (selectedFormat !== 'single_elimination' && groupWizardStep < 4) {
-            alert('請先完成 Step 1 / Step 2 / Step 3 的確認，再進行套用。');
+        if (selectedFormat !== 'single_elimination' && groupWizardStep < 5) {
+            const wizardMessage = getGroupWizardBlockingMessage() || '請先完成小組賽設定步驟。';
+            alert(wizardMessage);
             return;
         }
 
