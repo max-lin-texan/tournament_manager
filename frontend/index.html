@@ -305,7 +305,7 @@
             border-color: var(--primary);
         }
         .slot-score-input {
-            width: 42px;
+            width: 40px;
             flex-shrink: 0;
         }
         .btn-flash-success {
@@ -524,34 +524,55 @@
         .slot {
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            gap: 6px;
             padding: 8px 11px;
             min-height: 38px;
-            gap: 8px;
         }
 
         .slot + .slot { border-top: 1px solid var(--soft-border); }
 
-        .slot span, .slot input {
+        .slot-name {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .slot-name span,
+        .slot-name input {
+            display: block;
+            width: 100%;
             font-size: 0.82rem;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
         }
 
-        .slot span { color: var(--text-muted); }
+        .slot-name span { color: var(--text-muted); }
 
-        .slot input {
+        .slot-name input {
             background: rgba(255,255,255,0.03);
             border: 1px solid transparent;
             color: #fff;
-            width: 100%;
             outline: none;
             padding: 4px 6px;
             border-radius: 4px;
         }
 
-        .slot input:focus { border-color: var(--primary); }
+        .slot-name input:focus { border-color: var(--primary); }
+
+        .slot-actions {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .slot-score-input {
+            width: 40px;
+            min-width: 40px;
+            padding: 4px 2px;
+            font-size: 0.76rem;
+        }
 
         .win-btn {
             background: #374151;
@@ -565,11 +586,13 @@
         }
 
         .win-btn:hover { background: var(--primary); }
-        .slot.winner span, .slot.winner input { color: var(--success); font-weight: 800; }
+        .slot.winner .slot-name span,
+        .slot.winner .slot-name input { color: var(--success); font-weight: 800; }
         .slot.winner { background-color: rgba(16, 185, 129, 0.09); }
-        .slot.loser span, .slot.loser input { text-decoration: line-through; opacity: 0.55; }
+        .slot.loser .slot-name span,
+        .slot.loser .slot-name input { text-decoration: line-through; opacity: 0.55; }
 
-        .slot.bye span { color: var(--gold); font-weight: 800; }
+        .slot.bye .slot-name span { color: var(--gold); font-weight: 800; }
         .slot.bye { background-color: rgba(245, 158, 11, 0.06); }
 
         .center-arena {
@@ -3692,8 +3715,7 @@ ${data.reset_token}`, 'success');
         slot.dataset.slot = String(slotNum);
 
         const wrapper = document.createElement('div');
-        wrapper.style.flexGrow = '1';
-        wrapper.style.overflow = 'hidden';
+        wrapper.className = 'slot-name';
         const rawName = state[`slot${slotNum}`] || '';
         const isBye = rawName === '__BYE__';
         const name = isBye ? '' : rawName;
@@ -3710,25 +3732,8 @@ ${data.reset_token}`, 'success');
         }
         slot.appendChild(wrapper);
 
-        if (isBye) slot.classList.add('bye');
-        if (state.winner === slotNum) slot.classList.add('winner');
-        else if (state.winner !== null && !isBye) slot.classList.add('loser');
-
-        let winButton = null;
-        if (name && !matchHasBye(id) && !adminReadOnlyMode) {
-            const btn = document.createElement('button');
-            btn.className = 'win-btn';
-            btn.innerText = state.winner === slotNum ? '取消' : '勝';
-            btn.addEventListener('click', () => {
-                if (state.winner === slotNum) cancelMatchResult(id);
-                else executeMatchResult(id, slotNum);
-                resolveAutomaticByes();
-                recalculateStats();
-                renderTreePreserveScroll();
-            });
-            slot.appendChild(btn);
-            winButton = btn;
-        }
+        const actions = document.createElement('div');
+        actions.className = 'slot-actions';
 
         if (name && !isBye && state.winner !== null) {
             const scoreInput = document.createElement('input');
@@ -3746,9 +3751,29 @@ ${data.reset_token}`, 'success');
                     setKnockoutMatchScore(id, slotNum, event.target.value);
                 });
             }
-            if (winButton) slot.insertBefore(scoreInput, winButton);
-            else slot.appendChild(scoreInput);
+            actions.appendChild(scoreInput);
         }
+
+        if (name && !matchHasBye(id) && !adminReadOnlyMode) {
+            const btn = document.createElement('button');
+            btn.className = 'win-btn';
+            btn.innerText = state.winner === slotNum ? '取消' : '勝';
+            btn.addEventListener('click', () => {
+                if (state.winner === slotNum) cancelMatchResult(id);
+                else executeMatchResult(id, slotNum);
+                resolveAutomaticByes();
+                recalculateStats();
+                renderTreePreserveScroll();
+            });
+            actions.appendChild(btn);
+        }
+
+        if (actions.childElementCount > 0) slot.appendChild(actions);
+
+        if (isBye) slot.classList.add('bye');
+        if (state.winner === slotNum) slot.classList.add('winner');
+        else if (state.winner !== null && !isBye) slot.classList.add('loser');
+
         return slot;
     }
 
